@@ -19,3 +19,4 @@ pub mod package;
 pub mod req;
 
 pub use crate::error::{Error, Result};
+pub use crate::guid::{BASE91_TABLE, guid_for};
