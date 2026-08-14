@@ -17,6 +17,19 @@ pub const BASE91_TABLE: &[u8; 91] =
 /// `genanki.util.guid_for` for the same values.
 ///
 /// An empty slice joins to the empty string, same as Python's no-arg call.
+///
+/// Fields are joined with `"__"` before hashing. A single field value that
+/// itself contains `"__"` is therefore indistinguishable from multiple fields
+/// (same as Python genanki). Choose identity fields with that in mind.
+///
+/// # Examples
+///
+/// ```
+/// use genanki::guid_for;
+/// assert_eq!(guid_for(&["a", "b"]), "q/([o$8RAO");
+/// // A field that embeds "__" joins identically to two fields (Python parity):
+/// assert_eq!(guid_for(&["a__b"]), guid_for(&["a", "b"]));
+/// ```
 pub fn guid_for(values: &[&str]) -> String {
     let hash_str = values.join("__");
 
