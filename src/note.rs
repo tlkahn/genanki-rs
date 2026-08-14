@@ -36,7 +36,12 @@ impl Note {
     ///
     /// Errors with [`Error::FieldCountMismatch`] if `fields.len()` differs
     /// from `model.fields.len()` (no auto-padding, matching Python genanki's
-    /// fail-fast check). Accepts either a `Model` or an `Arc<Model>`.
+    /// fail-fast check). Accepts a [`Model`], an [`Arc<Model>`], or a `&Model`
+    /// (via [`From<&Model> for Arc<Model>`](std::convert::From), which clones
+    /// into a fresh `Arc`). For builtin statics use
+    /// `Note::new(&*BASIC_MODEL, fields)?`. When creating many notes from one
+    /// model, clone into an `Arc` once and reuse it to avoid repeated deep
+    /// clones.
     pub fn new(
         model: impl Into<Arc<Model>>,
         fields: impl IntoIterator<Item = impl Into<String>>,
