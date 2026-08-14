@@ -57,7 +57,6 @@ impl ReqKind {
 /// Only `qfmt` is rendered. Filter tags such as `{{cloze:Text}}` resolve to
 /// the field name (documented divergence from Python/chevron, which looks up
 /// the literal key).
-#[must_use]
 pub fn compute_req(fields: &[Field], templates: &[Template]) -> Result<Vec<ReqEntry>> {
     let field_names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
     let mut req = Vec::new();
@@ -167,7 +166,11 @@ fn render_into(template: &str, fields: &BTreeMap<&str, &str>) -> String {
                 let truthy = lookup(name, fields).is_some_and(|v| !v.is_empty());
                 match find_section_body(after_close, name) {
                     Some((interior, tail)) => {
-                        let render_section = if sigil == Some(&b'#') { truthy } else { !truthy };
+                        let render_section = if sigil == Some(&b'#') {
+                            truthy
+                        } else {
+                            !truthy
+                        };
                         if render_section {
                             out.push_str(&render_into(interior, fields));
                         }
@@ -346,7 +349,6 @@ mod tests {
     // --- compute_req fixtures (Python genanki test_Model_req*) ---
 
     use crate::model::{Field, Template};
-    use crate::Error;
 
     fn simple_model() -> (Vec<Field>, Vec<Template>) {
         (
@@ -367,8 +369,16 @@ mod tests {
                 Field::new("English"),
             ],
             vec![
-                Template::new("Traditional", "{{Traditional}}", "{{FrontSide}}<hr id=\"answer\">{{English}}"),
-                Template::new("Simplified", "{{Simplified}}", "{{FrontSide}}<hr id=\"answer\">{{English}}"),
+                Template::new(
+                    "Traditional",
+                    "{{Traditional}}",
+                    "{{FrontSide}}<hr id=\"answer\">{{English}}",
+                ),
+                Template::new(
+                    "Simplified",
+                    "{{Simplified}}",
+                    "{{FrontSide}}<hr id=\"answer\">{{English}}",
+                ),
             ],
         )
     }

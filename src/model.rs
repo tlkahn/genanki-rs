@@ -1,8 +1,7 @@
 //! Note types and card templates. (Phase 2)
 
 /// Default LaTeX preamble, byte-identical to Python genanki `Model.DEFAULT_LATEX_PRE`.
-pub const DEFAULT_LATEX_PRE: &str =
-    "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n";
+pub const DEFAULT_LATEX_PRE: &str = "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n";
 
 /// Default LaTeX postamble, byte-identical to Python genanki `Model.DEFAULT_LATEX_POST`.
 pub const DEFAULT_LATEX_POST: &str = "\\end{document}";
@@ -270,6 +269,77 @@ impl Model {
     pub fn req(&self) -> crate::Result<Vec<crate::req::ReqEntry>> {
         crate::req::compute_req(&self.fields, &self.templates)
     }
+
+    /// Serialize to the object stored under `col.models[model_id]`.
+    ///
+    /// Mirrors Python genanki `Model.to_json(timestamp, deck_id)` key-for-key:
+    /// `id` is a decimal string, template `did` is `null`, `mod` is the
+    /// timestamp, and `req` is computed on the fly (errors if a template has
+    /// no computable required fields). Field and template `ord` are assigned
+    /// from their positions.
+    pub fn to_json(&self, timestamp_secs: i64, deck_id: i64) -> crate::Result<serde_json::Value> {
+        let req = self.req()?;
+
+        let flds: Vec<serde_json::Value> = self
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(ord, f)| {
+                serde_json::json!({
+                    "name": f.name,
+                    "ord": ord,
+                    "font": f.font,
+                    "media": f.media,
+                    "rtl": f.rtl,
+                    "size": f.size,
+                    "sticky": f.sticky,
+                })
+            })
+            .collect();
+
+        let tmpls: Vec<serde_json::Value> = self
+            .templates
+            .iter()
+            .enumerate()
+            .map(|(ord, t)| {
+                serde_json::json!({
+                    "name": t.name,
+                    "qfmt": t.qfmt,
+                    "afmt": t.afmt,
+                    "ord": ord,
+                    "bafmt": t.bafmt,
+                    "bqfmt": t.bqfmt,
+                    "bfont": t.bfont,
+                    "bsize": t.bsize,
+                    "did": t.did,
+                })
+            })
+            .collect();
+
+        let req_json: Vec<serde_json::Value> = req
+            .iter()
+            .map(|e| serde_json::json!([e.template_ord, e.kind.as_str(), e.field_ords]))
+            .collect();
+
+        Ok(serde_json::json!({
+            "css": self.css,
+            "did": deck_id,
+            "flds": flds,
+            "id": self.id.to_string(),
+            "latexPost": self.latex_post,
+            "latexPre": self.latex_pre,
+            "latexsvg": false,
+            "mod": timestamp_secs,
+            "name": self.name,
+            "req": req_json,
+            "sortf": self.sort_field_index,
+            "tags": [],
+            "tmpls": tmpls,
+            "type": self.model_type as u8,
+            "usn": -1,
+            "vers": [],
+        }))
+    }
 }
 
 #[cfg(test)]
@@ -373,8 +443,12 @@ mod tests {
     fn default_latex_pre_matches_python() {
         assert!(DEFAULT_LATEX_PRE.contains(r"\documentclass[12pt]{article}"));
         assert!(DEFAULT_LATEX_PRE.contains(r"\usepackage{amssymb,amsmath}"));
-        assert!(DEFAULT_LATEX_PRE.ends_with(r"\begin{document}
-") || DEFAULT_LATEX_PRE.ends_with("\\begin{document}\n"));
+        assert!(
+            DEFAULT_LATEX_PRE.ends_with(
+                r"\begin{document}
+"
+            ) || DEFAULT_LATEX_PRE.ends_with("\\begin{document}\n")
+        );
         assert_eq!(
             DEFAULT_LATEX_PRE,
             "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n"
@@ -455,5 +529,82 @@ mod tests {
                 field_ords: vec![0, 1],
             }]
         );
+    }
+
+    #[test]
+    fn to_json_simple_model_shape() {
+        use serde_json::json;
+        let m = Model::new(234567, "foomodel")
+            .field(Field::new("AField"))
+            .field(Field::new("BField"))
+            .template(Template::new("card1", "{{AField}}", "{{BField}}"));
+        let v = m.to_json(1_600_000_000, 123456).unwrap();
+
+        assert_eq!(v["id"], "234567"); // string
+        assert_eq!(v["name"], "foomodel");
+        assert_eq!(v["did"], 123456);
+        assert_eq!(v["mod"], 1_600_000_000);
+        assert_eq!(v["type"], 0);
+        assert_eq!(v["usn"], -1);
+        assert_eq!(v["latexsvg"], false);
+        assert_eq!(v["tags"], json!([]));
+        assert_eq!(v["vers"], json!([]));
+        assert_eq!(v["sortf"], 0);
+        assert_eq!(v["css"], "");
+        assert_eq!(v["latexPre"], DEFAULT_LATEX_PRE);
+        assert_eq!(v["latexPost"], DEFAULT_LATEX_POST);
+        assert_eq!(v["req"], json!([[0, "all", [0]]]));
+
+        assert_eq!(v["flds"][0]["name"], "AField");
+        assert_eq!(v["flds"][0]["ord"], 0);
+        assert_eq!(v["flds"][0]["font"], "Liberation Sans");
+        assert_eq!(v["flds"][0]["media"], json!([]));
+        assert_eq!(v["flds"][0]["rtl"], false);
+        assert_eq!(v["flds"][0]["size"], 20);
+        assert_eq!(v["flds"][0]["sticky"], false);
+        assert_eq!(v["flds"][1]["ord"], 1);
+
+        assert_eq!(v["tmpls"][0]["name"], "card1");
+        assert_eq!(v["tmpls"][0]["ord"], 0);
+        assert_eq!(v["tmpls"][0]["qfmt"], "{{AField}}");
+        assert_eq!(v["tmpls"][0]["afmt"], "{{BField}}");
+        assert_eq!(v["tmpls"][0]["bafmt"], "");
+        assert_eq!(v["tmpls"][0]["bqfmt"], "");
+        assert_eq!(v["tmpls"][0]["bfont"], "");
+        assert_eq!(v["tmpls"][0]["bsize"], 0);
+        assert!(v["tmpls"][0]["did"].is_null());
+    }
+
+    #[test]
+    fn to_json_cloze_type_is_one() {
+        use serde_json::json;
+        let m = Model::new(9, "c")
+            .model_type(ModelType::Cloze)
+            .field(Field::new("Text"))
+            .field(Field::new("Back Extra"))
+            .template(Template::new("Cloze", "{{cloze:Text}}", "{{cloze:Text}}"));
+        let v = m.to_json(0, 1).unwrap();
+        assert_eq!(v["type"], 1);
+        assert_eq!(v["req"], json!([[0, "all", [0]]]));
+    }
+
+    #[test]
+    fn to_json_custom_latex_and_sortf() {
+        let m = Model::new(1, "x")
+            .field(Field::new("A"))
+            .template(Template::new("c", "{{A}}", ""))
+            .latex_pre("PRE")
+            .latex_post("POST")
+            .sort_field_index(1);
+        let v = m.to_json(0, 1).unwrap();
+        assert_eq!(v["latexPre"], "PRE");
+        assert_eq!(v["latexPost"], "POST");
+        assert_eq!(v["sortf"], 1);
+    }
+
+    #[test]
+    fn to_json_propagates_template_req_error() {
+        let m = Model::new(1, "x").template(Template::new("c", "no fields", ""));
+        assert!(matches!(m.to_json(0, 1), Err(Error::TemplateReq { .. })));
     }
 }

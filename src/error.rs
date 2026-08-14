@@ -39,7 +39,9 @@ mod tests {
 
     #[test]
     fn template_req_error_display() {
-        let err = Error::TemplateReq { qfmt: "{{Nope}}".into() };
+        let err = Error::TemplateReq {
+            qfmt: "{{Nope}}".into(),
+        };
         let s = err.to_string();
         assert!(s.contains("required fields"));
         assert!(s.contains("{{Nope}}"));
