@@ -13,9 +13,9 @@ categories = ["encoding", "multimedia"]
 exclude = ["doc/", ".github/"]
 
 [dependencies]
-sha2 = "0.10"   # SHA-256 for note/card GUIDs (Python genanki parity)
-thiserror = "2"  # #[derive(Error)] for the crate error type
-# Intentionally empty in Phase 0. Real deps land per phase (see epic #1).
+# Phase 1: GUID hashing + error derive. Further deps land in later phases (epic #1).
+sha2 = "0.10"      # SHA-256 for note/card GUIDs (Python genanki parity)
+thiserror = "2"    # #[derive(Error)] for the crate error type
 
 [dev-dependencies]
 # Empty until a phase needs tempfile / etc.
