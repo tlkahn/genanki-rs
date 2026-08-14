@@ -22,6 +22,32 @@ pub enum Error {
         /// The template's `qfmt` string (interpolated into the error message).
         qfmt: String,
     },
+
+    /// A tag contained a space (U+0020), which Anki does not allow.
+    ///
+    /// Mirrors Python genanki's `ValueError` from `_TagList._validate_tag`;
+    /// raised from every tag mutation path.
+    #[error("tag contains a space (U+0020), which is not allowed: {tag:?}")]
+    TagContainsSpace {
+        /// The offending tag value.
+        tag: String,
+    },
+
+    /// The note's field count did not match its model's field count.
+    ///
+    /// Mirrors Python genanki's `ValueError` from
+    /// `Note._check_number_model_fields_matches_num_fields`.
+    #[error(
+        "number of fields in model does not match note: model {model_name:?} has {model_fields} fields, note has {note_fields}"
+    )]
+    FieldCountMismatch {
+        /// The model's name.
+        model_name: String,
+        /// Number of fields defined on the model.
+        model_fields: usize,
+        /// Number of fields supplied on the note.
+        note_fields: usize,
+    },
 }
 
 /// Result alias for this crate.
@@ -35,6 +61,27 @@ mod tests {
     fn error_display() {
         let err = Error::Internal("scaffold");
         assert_eq!(err.to_string(), "internal error: scaffold");
+    }
+
+    #[test]
+    fn tag_contains_space_error_display() {
+        let err = Error::TagContainsSpace { tag: "b ar".into() };
+        let s = err.to_string();
+        assert!(s.contains("space"));
+        assert!(s.contains("b ar"));
+    }
+
+    #[test]
+    fn field_count_mismatch_error_display() {
+        let err = Error::FieldCountMismatch {
+            model_name: "Test Model".into(),
+            model_fields: 3,
+            note_fields: 2,
+        };
+        let s = err.to_string();
+        assert!(s.contains("Test Model"));
+        assert!(s.contains("has 3 fields"));
+        assert!(s.contains("note has 2"));
     }
 
     #[test]
