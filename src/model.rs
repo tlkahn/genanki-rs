@@ -342,6 +342,18 @@ impl Model {
     }
 }
 
+impl From<&Model> for std::sync::Arc<Model> {
+    /// Clone a borrowed model into a shared [`std::sync::Arc`].
+    ///
+    /// Enables [`crate::Note::new`] to accept a builtin static directly via
+    /// `Note::new(&*BASIC_MODEL, fields)?` (the existing `impl Into<Arc<_>>`
+    /// bound). Each call clones the model into a fresh `Arc`; when writing
+    /// many notes, clone the static once into an `Arc` yourself and reuse it.
+    fn from(model: &Model) -> Self {
+        std::sync::Arc::new(model.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -529,6 +541,21 @@ mod tests {
                 field_ords: vec![0, 1],
             }]
         );
+    }
+
+    #[test]
+    fn from_ref_model_into_arc() {
+        let m = Model::new(1559383000, "Basic (genanki)")
+            .field(Field::new("Front"))
+            .field(Field::new("Back"));
+        let arc: std::sync::Arc<Model> = (&m).into();
+        assert_eq!(arc.id, 1559383000);
+        assert_eq!(arc.name, "Basic (genanki)");
+
+        // Powers `Note::new(&*BASIC_MODEL, fields)?` without an owned clone
+        // at the call site.
+        let note = crate::Note::new(&m, ["a", "b"]).unwrap();
+        assert_eq!(note.model().id, 1559383000);
     }
 
     #[test]
