@@ -1,26 +1,18 @@
 //! Crate error type and result alias.
 
-use std::fmt;
+use thiserror::Error;
 
 /// Errors produced by this crate.
 ///
-/// Variants will expand in Phase 1+ (IO, validation, template req, media, SQL).
-#[derive(Debug)]
+/// Variants will expand in later phases (IO, validation, template req, media, SQL).
+#[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Placeholder variant so the type is usable before real failures exist.
     /// Remove once concrete variants land.
+    #[error("internal error: {0}")]
     Internal(&'static str),
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Internal(msg) => write!(f, "internal error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 /// Result alias for this crate.
 pub type Result<T> = std::result::Result<T, Error>;

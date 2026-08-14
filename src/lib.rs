@@ -19,3 +19,5 @@ pub mod package;
 pub mod req;
 
 pub use crate::error::{Error, Result};
+pub use crate::guid::guid_for;
+// BASE91_TABLE: use genanki::guid::BASE91_TABLE (not re-exported at crate root).
