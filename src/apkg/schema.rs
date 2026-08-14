@@ -1,4 +1,4 @@
-//! SQLite schema DDL and schema version constants. (Phase 3)
+//! SQLite DDL for new `collection.anki2` databases (`APKG_SCHEMA`).
 
 /// SQLite DDL executed when creating a new `collection.anki2`.
 ///

@@ -1,4 +1,4 @@
-//! GUID generation for notes and cards. (Phase 1)
+//! Note GUID generation (`guid_for`) and Anki base91 alphabet.
 
 use sha2::Digest;
 

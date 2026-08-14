@@ -1,4 +1,4 @@
-//! Seed `col` row (deck list, models, config). (Phase 3)
+//! Seed `INSERT` for the single `col` row (`APKG_COL`).
 
 /// Seed `INSERT` for the single `col` row (default deck / conf / dconf).
 ///
