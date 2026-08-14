@@ -1,6 +1,6 @@
 # Issue #8: Phase 6 - Hardening + v0.1.0 release readiness
 
-Status: PLANNED
+Status: IMPLEMENTED (see PR #15)
 Issue: https://github.com/tlkahn/genanki-rs/issues/8
 Parent epic: https://github.com/tlkahn/genanki-rs/issues/1
 Branch: `issue/8-hardening-v0.1.0`
