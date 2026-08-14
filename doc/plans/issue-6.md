@@ -1,6 +1,6 @@
 # Issue #6: Phase 4 - Deck + Package writer (.apkg zip, sqlite, media)
 
-Status: IMPLEMENTED
+Status: IMPLEMENTED (see PR #13)
 Issue: https://github.com/tlkahn/genanki-rs/issues/6
 Parent epic: https://github.com/tlkahn/genanki-rs/issues/1
 Branch: `issue/6-deck-package`
