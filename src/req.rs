@@ -212,15 +212,11 @@ fn find_section_body<'a>(after_open: &'a str, name: &str) -> Option<(&'a str, &'
         let start = rest.find("{{")?;
         let after = &rest[start + 2..];
         let (tag_body, tail) = if let Some(b) = after.strip_prefix('{') {
-            match b.find("}}}") {
-                Some(rel) => (&b[..rel], &b[rel + 3..]),
-                None => return None,
-            }
+            let rel = b.find("}}}")?;
+            (&b[..rel], &b[rel + 3..])
         } else {
-            match after.find("}}") {
-                Some(rel) => (&after[..rel], &after[rel + 2..]),
-                None => return None,
-            }
+            let rel = after.find("}}")?;
+            (&after[..rel], &after[rel + 2..])
         };
         let raw = tag_body.trim();
         match raw.as_bytes().first() {
