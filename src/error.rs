@@ -6,6 +6,7 @@ use thiserror::Error;
 ///
 /// Variants will expand in later phases (IO, validation, template req, media, SQL).
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Placeholder variant so the type is usable before real failures exist.
     /// Remove once concrete variants land.
