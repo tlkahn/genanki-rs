@@ -426,9 +426,8 @@ fn tag_re() -> &'static Regex {
 
 /// `^/?[a-zA-Z0-9]+(?: .*|/?)>$` applied to a tag body that includes the
 /// closing `>`. No DOTALL: `.*` must not span newlines (Python parity).
-static VALID_BODY_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^/?[a-zA-Z0-9]+(?: .*|/?)>$").expect("known-good body regex")
-});
+static VALID_BODY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^/?[a-zA-Z0-9]+(?: .*|/?)>$").expect("known-good body regex"));
 
 fn valid_body_re() -> &'static Regex {
     &VALID_BODY_RE
@@ -801,8 +800,16 @@ mod tests {
         assert_eq!(logs.len(), 1);
         assert!(logs[0].contains("invalid HTML tags"));
         assert!(logs[0].contains("<$>"));
-        assert!(logs[0].contains("html.escape()"), "warn text must match Python prose: {}", logs[0]);
-        assert!(logs[0].contains("isn't"), "warn text must match Python prose: {}", logs[0]);
+        assert!(
+            logs[0].contains("html.escape()"),
+            "warn text must match Python prose: {}",
+            logs[0]
+        );
+        assert!(
+            logs[0].contains("isn't"),
+            "warn text must match Python prose: {}",
+            logs[0]
+        );
     }
 
     #[test]
@@ -1090,8 +1097,16 @@ mod tests {
         let logs = LOGS.lock().unwrap().clone();
         assert_eq!(logs.len(), 1);
         assert!(logs[0].contains("<$>"));
-        assert!(logs[0].contains("html.escape()"), "warn text must match Python prose: {}", logs[0]);
-        assert!(logs[0].contains("isn't"), "warn text must match Python prose: {}", logs[0]);
+        assert!(
+            logs[0].contains("html.escape()"),
+            "warn text must match Python prose: {}",
+            logs[0]
+        );
+        assert!(
+            logs[0].contains("isn't"),
+            "warn text must match Python prose: {}",
+            logs[0]
+        );
     }
 
     // --- Formatting helpers (T12) ---
