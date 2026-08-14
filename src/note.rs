@@ -64,6 +64,13 @@ impl Note {
         &self.model
     }
 
+    /// The shared model handle (cheap `Arc` clone), used by the Phase 4
+    /// writers to auto-register note models on the deck.
+    #[must_use]
+    pub(crate) fn model_arc(&self) -> Arc<Model> {
+        Arc::clone(&self.model)
+    }
+
     /// Field values in model ordinal order.
     #[must_use]
     pub fn fields(&self) -> &[String] {
@@ -268,6 +275,19 @@ impl Note {
 }
 
 impl Note {
+    /// Resolve the card list without mutating the cache: the cached cards if
+    /// present (preserving custom `suspend` flags), else a fresh compute.
+    ///
+    /// The Phase 4 writers need this on `&self` because `Deck::write_to_file`
+    /// takes the deck by shared reference while notes may already hold a
+    /// suspended card cache.
+    pub(crate) fn resolved_cards(&self) -> Result<Vec<crate::card::Card>> {
+        if let Some(c) = &self.cards {
+            return Ok(c.clone());
+        }
+        self.compute_cards()
+    }
+
     /// Compute cards for the current fields, dispatching on model type.
     fn compute_cards(&self) -> Result<Vec<crate::card::Card>> {
         match self.model.model_type {
@@ -275,7 +295,6 @@ impl Note {
             crate::model::ModelType::Cloze => self.cloze_cards(),
         }
     }
-
     /// Front/back cards: one per `model.req()` entry whose required fields
     /// are all (or any, per the entry kind) non-empty. Python parity: only
     /// `""` is falsy; whitespace-only fields are non-empty.
@@ -471,9 +490,8 @@ fn warn_invalid_html(field: &str) {
 /// Join fields with the Anki unit-separator (`\x1f`) - the `flds` DB column
 /// format Python genanki produces from `Note._format_fields`.
 ///
-/// Consumed by the Phase 4 DB writers (issue #6); unused until then.
+/// Consumed by the Phase 4 DB writers (issue #6).
 #[must_use]
-#[allow(dead_code)]
 pub(crate) fn format_fields(fields: &[String]) -> String {
     fields.join("\x1f")
 }
@@ -481,9 +499,8 @@ pub(crate) fn format_fields(fields: &[String]) -> String {
 /// Tags joined with single spaces and wrapped in spaces - the `tags` DB
 /// column format Python genanki produces from `Note._format_tags`.
 ///
-/// Consumed by the Phase 4 DB writers (issue #6); unused until then.
+/// Consumed by the Phase 4 DB writers (issue #6).
 #[must_use]
-#[allow(dead_code)]
 pub(crate) fn format_tags(tags: &[String]) -> String {
     format!(" {} ", tags.join(" "))
 }
@@ -1077,6 +1094,21 @@ mod tests {
         // custom suspend flag is cleared (documented cache semantics).
         note.set_fields(["中國", "中国", "China"]).unwrap();
         assert!(!note.cards().unwrap()[1].suspend);
+    }
+
+    #[test]
+    fn resolved_cards_prefers_cache_and_computes_without_mutating() {
+        let mut note = Note::new(cn_model(), ["中國", "中国", "China"]).unwrap();
+
+        // No cache yet: computes on &self and does not populate the cache.
+        let cards = note.resolved_cards().unwrap();
+        assert_eq!(cards.len(), 2);
+        assert!(!cards[1].suspend);
+
+        // Suspend via the mutating cache path; resolved_cards must keep it.
+        note.cards_mut().unwrap()[1].suspend = true;
+        let cards = note.resolved_cards().unwrap();
+        assert!(cards[1].suspend, "must prefer cached suspended cards");
     }
 
     #[test]

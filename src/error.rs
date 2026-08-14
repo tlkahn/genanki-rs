@@ -1,5 +1,7 @@
 //! Crate error type and result alias.
 
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 /// Errors produced by this crate.
@@ -48,6 +50,55 @@ pub enum Error {
         /// Number of fields supplied on the note.
         note_fields: usize,
     },
+
+    /// A deck failed a write-time validation (e.g. empty name).
+    #[error("deck invalid: {reason}")]
+    DeckInvalid {
+        /// Human-readable reason for the rejection.
+        reason: &'static str,
+    },
+
+    /// A media file listed in the package does not exist on disk.
+    #[error("media file not found: {path}")]
+    MediaNotFound {
+        /// The missing path.
+        path: PathBuf,
+    },
+
+    /// A media path has no usable basename (e.g. `..`).
+    #[error("media path has no usable basename: {path}")]
+    MediaInvalidPath {
+        /// The offending path.
+        path: PathBuf,
+    },
+
+    /// Two distinct media paths share the same basename, which would
+    /// silently overwrite in Anki's flat media folder.
+    #[error("media basename collision for {basename:?}: {path_a} and {path_b}")]
+    MediaBasenameCollision {
+        /// The colliding basename.
+        basename: String,
+        /// First path seen with this basename.
+        path_a: PathBuf,
+        /// Second (conflicting) path.
+        path_b: PathBuf,
+    },
+
+    /// Underlying filesystem error (e.g. zip target open).
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    /// Underlying SQLite error.
+    #[error(transparent)]
+    Sqlite(#[from] rusqlite::Error),
+
+    /// Underlying zip archive error.
+    #[error(transparent)]
+    Zip(#[from] zip::result::ZipError),
+
+    /// Underlying JSON error (col merge, media map).
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
 }
 
 /// Result alias for this crate.
@@ -92,5 +143,58 @@ mod tests {
         let s = err.to_string();
         assert!(s.contains("required fields"));
         assert!(s.contains("{{Nope}}"));
+    }
+
+    // --- Phase 4 (issue #6) domain variants ---
+
+    #[test]
+    fn deck_invalid_error_display() {
+        let err = Error::DeckInvalid {
+            reason: "name must be non-empty",
+        };
+        assert_eq!(err.to_string(), "deck invalid: name must be non-empty");
+    }
+
+    #[test]
+    fn media_not_found_error_display() {
+        let err = Error::MediaNotFound {
+            path: "/tmp/nope.mp3".into(),
+        };
+        assert_eq!(err.to_string(), "media file not found: /tmp/nope.mp3");
+    }
+
+    #[test]
+    fn media_invalid_path_error_display() {
+        let err = Error::MediaInvalidPath {
+            path: "/tmp/..".into(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "media path has no usable basename: /tmp/.."
+        );
+    }
+
+    #[test]
+    fn media_basename_collision_error_display() {
+        let err = Error::MediaBasenameCollision {
+            basename: "foo.png".into(),
+            path_a: "/a/foo.png".into(),
+            path_b: "/b/foo.png".into(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "media basename collision for \"foo.png\": /a/foo.png and /b/foo.png"
+        );
+    }
+
+    #[test]
+    fn io_sqlite_zip_json_variants_exist() {
+        // Transparent `#[from]` variants must exist and map to their sources.
+        let io: Error = std::io::Error::other("boom").into();
+        assert!(matches!(io, Error::Io(_)));
+        let json: Error = serde_json::from_str::<serde_json::Value>("{")
+            .unwrap_err()
+            .into();
+        assert!(matches!(json, Error::Json(_)));
     }
 }

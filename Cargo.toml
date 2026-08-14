@@ -23,6 +23,11 @@ serde_json = "1"
 regex = "1"
 # Phase 3: non-fatal invalid-HTML warnings on note construct (facade is zero-cost without a logger).
 log = "0.4"
+# Phase 4 (issue #6): .apkg production - temp sqlite, zip layout, media.
+rusqlite = { version = "0.37", features = ["bundled"] }  # bundled: no system libsqlite
+zip = "2"       # write + read in structural tests
+# Runtime dep (matches Python tempfile.mkstemp): temp collection.anki2 during write.
+tempfile = "3"
 
 [dev-dependencies]
-# Empty until a phase needs tempfile / etc.
+# None required: rusqlite + zip already available to tests via the crate under test.

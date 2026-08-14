@@ -19,9 +19,11 @@ pub mod package;
 pub mod req;
 
 pub use crate::card::Card;
+pub use crate::deck::Deck;
 pub use crate::error::{Error, Result};
 pub use crate::guid::guid_for;
 pub use crate::model::{Field, Model, ModelType, Template};
 pub use crate::note::Note;
+pub use crate::package::Package;
 pub use crate::req::{ReqEntry, ReqKind};
 // BASE91_TABLE: use genanki::guid::BASE91_TABLE (not re-exported at crate root).
