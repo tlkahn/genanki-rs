@@ -135,8 +135,13 @@ impl Note {
         Ok(())
     }
 
-    /// Insert a tag at `index` (validated). Panics if `index` is out of
-    /// bounds (mirroring Python list `insert` behavior for in-range inserts).
+    /// Insert a tag at `index` (validated).
+    ///
+    /// Errors with [`Error::TagContainsSpace`] if the tag contains U+0020.
+    ///
+    /// Panics if `index > self.tags.len()` (Rust `Vec::insert`).
+    /// `index == len` appends. This is **not** Python `list.insert` OOB
+    /// clamping; Python never raises on insert bounds.
     pub fn insert_tag(&mut self, index: usize, tag: impl Into<String>) -> Result<()> {
         let tag = tag.into();
         validate_tag(&tag)?;
@@ -178,6 +183,10 @@ impl Note {
     /// The sort-field value: the override if set, else
     /// `fields[model.sort_field_index]` (falling back to `fields[0]` when the
     /// index is out of bounds, which a well-formed model should not produce).
+    ///
+    /// Negative `model.sort_field_index` values are clamped to `0` (Python
+    /// would apply negative indexing; well-formed Anki models use
+    /// non-negative indices).
     #[must_use]
     pub fn sort_field(&self) -> &str {
         if let Some(sf) = &self.sort_field_override {
