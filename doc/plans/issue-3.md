@@ -1,9 +1,10 @@
 # Issue #3: Phase 1 - GUID + primitives (base91, schema, error type)
 
-Status: PLAN
+Status: IMPLEMENTED
+PR: https://github.com/tlkahn/genanki-rs/pull/10
 Issue: https://github.com/tlkahn/genanki-rs/issues/3
 Parent epic: https://github.com/tlkahn/genanki-rs/issues/1
-Branch: `issue/3-guid-primitives` (or worktree equivalent)
+Branch: `issue/3-guid-primitives`
 Method: strict fine-grained TDD (RED -> GREEN -> refactor) per work item below
 
 ## 1. Goal
