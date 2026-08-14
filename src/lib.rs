@@ -1,14 +1,21 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Programmatic generation of Anki `.apkg` packages.
+//!
+//! Feature roadmap and full specification: see repository epic issue #1.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod error;
+
+// Domain modules (filled in later phases). Public so paths stabilize early.
+pub mod apkg;
+pub mod builtin_models;
+pub mod card;
+pub mod deck;
+pub mod guid;
+pub mod model;
+pub mod note;
+pub mod package;
+pub mod req;
+
+pub use crate::error::{Error, Result};
