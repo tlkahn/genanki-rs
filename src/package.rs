@@ -99,29 +99,93 @@ pub(crate) fn write_to_file_impl(
     write_db(&conn, decks, timestamp_secs)?;
     conn.close().map_err(|(_, e)| e)?;
 
-    // 2. Zip: collection.anki2, media JSON, then numbered media blobs.
-    let file = std::fs::File::create(path.as_ref())?;
-    let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default();
-
-    zip.start_file("collection.anki2", options)?;
+    // 2. Zip into a temp file in the destination directory, so a mid-write
+    // failure never truncates a pre-existing destination. `persist` (rename)
+    // publishes the file only after the zip finished cleanly.
+    let mut zip_tmp = tempfile::NamedTempFile::new_in(dest_parent(path.as_ref()))?;
+    let options = zip_file_options(timestamp_secs);
     {
-        let mut src = std::fs::File::open(tmp.path())?;
-        std::io::copy(&mut src, &mut zip)?;
+        let mut zip = zip::ZipWriter::new(&mut zip_tmp);
+
+        zip.start_file("collection.anki2", options)?;
+        {
+            let mut src = std::fs::File::open(tmp.path())?;
+            std::io::copy(&mut src, &mut zip)?;
+        }
+
+        let media_json = media_json_value(&media_plan)?;
+        zip.start_file("media", options)?;
+        zip.write_all(media_json.to_string().as_bytes())?;
+
+        for (idx, media_path) in media_plan.iter().enumerate() {
+            zip.start_file(idx.to_string(), options)?;
+            let mut src = std::fs::File::open(media_path)?;
+            std::io::copy(&mut src, &mut zip)?;
+        }
+
+        zip.finish()?;
     }
 
-    let media_json = media_json_value(&media_plan)?;
-    zip.start_file("media", options)?;
-    zip.write_all(media_json.to_string().as_bytes())?;
-
-    for (idx, media_path) in media_plan.iter().enumerate() {
-        zip.start_file(idx.to_string(), options)?;
-        let mut src = std::fs::File::open(media_path)?;
-        std::io::copy(&mut src, &mut zip)?;
-    }
-
-    zip.finish()?;
+    zip_tmp.persist(path.as_ref()).map_err(|e| e.error)?;
     Ok(())
+}
+
+/// Parent directory of `path`, or `"."` when the path has no parent (e.g. a
+/// bare filename like `out.apkg`). The temp zip must live on the same
+/// filesystem as the destination for `persist` (rename) to succeed.
+fn dest_parent(path: &Path) -> &Path {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    }
+}
+
+/// Zip file options with every entry's mtime pinned to a deterministic DOS
+/// datetime derived from `timestamp_secs` (clamped to 1980-01-01 ..
+/// 2107-12-31). Fixed timestamps therefore yield byte-identical packages
+/// across runs, not just identical ids/`mod` columns.
+fn zip_file_options(timestamp_secs: f64) -> zip::write::SimpleFileOptions {
+    zip::write::SimpleFileOptions::default().last_modified_time(zip_mtime(timestamp_secs))
+}
+
+/// Convert Unix seconds to a zip DOS [`zip::DateTime`], clamped to the zip
+/// representable range 1980-01-01 .. 2107-12-31 23:59:58 UTC (DOS stores
+/// seconds at 2s resolution; even seconds only). Values below the range
+/// clamp to the epoch, above it to the maximum.
+fn zip_mtime(timestamp_secs: f64) -> zip::DateTime {
+    const MIN: i64 = 315_532_800; // 1980-01-01 00:00:00 UTC
+    const MAX: i64 = 4_354_819_198; // 2107-12-31 23:59:58 UTC
+    let secs = (timestamp_secs as i64).clamp(MIN, MAX);
+    let (year, month, day, hour, minute, second) = civil_from_secs(secs);
+    zip::DateTime::from_date_and_time(year, month, day, hour, minute, second)
+        .unwrap_or_else(|_| zip::DateTime::default_for_write())
+}
+
+/// Civil date/time (UTC) from seconds since the Unix epoch. Uses Howard
+/// Hinnant's `civil_from_days` algorithm; no external deps.
+fn civil_from_secs(secs: i64) -> (u16, u8, u8, u8, u8, u8) {
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    let (hour, minute, second) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097); // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let year = if m <= 2 { y + 1 } else { y }; // [1970, 2107]
+    (
+        year as u16,
+        m as u8,
+        d as u8,
+        hour as u8,
+        minute as u8,
+        (second & !1) as u8, // DOS 2s resolution; even seconds only
+    )
 }
 
 /// Apply schema + seed, then write every deck into the open connection.
@@ -271,5 +335,43 @@ mod tests {
     #[test]
     fn media_json_value_empty_is_empty_object() {
         assert_eq!(media_json_value(&[]).unwrap(), serde_json::json!({}));
+    }
+
+    // --- Review 5291226535: zip mtime helper (finding 2) ---
+
+    fn zip_fields(dt: zip::DateTime) -> (u16, u8, u8, u8, u8, u8) {
+        (
+            dt.year(),
+            dt.month(),
+            dt.day(),
+            dt.hour(),
+            dt.minute(),
+            dt.second(),
+        )
+    }
+
+    #[test]
+    fn zip_mtime_derives_from_timestamp_secs() {
+        // 2020-09-13 12:26:40 UTC -> even-second DOS datetime.
+        let dt = zip_mtime(1_600_000_000.0);
+        assert_eq!(zip_fields(dt), (2020, 9, 13, 12, 26, 40));
+    }
+
+    #[test]
+    fn zip_mtime_clamps_below_1980_to_epoch() {
+        let dt = zip_mtime(0.0); // 1970-01-01, before DOS range
+        assert_eq!(zip_fields(dt), (1980, 1, 1, 0, 0, 0));
+    }
+
+    #[test]
+    fn zip_mtime_clamps_above_2107_to_max() {
+        let dt = zip_mtime(9_999_999_999.0);
+        assert_eq!(zip_fields(dt), (2107, 12, 31, 23, 59, 58));
+    }
+
+    #[test]
+    fn dest_parent_bare_filename_is_dot() {
+        assert_eq!(dest_parent(Path::new("out.apkg")), Path::new("."));
+        assert_eq!(dest_parent(Path::new("a/b.apkg")), Path::new("a"));
     }
 }

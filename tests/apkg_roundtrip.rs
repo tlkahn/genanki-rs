@@ -319,6 +319,94 @@ fn tags_and_flds_formatting_in_sqlite() {
     assert_eq!(flds, "one\x1ftwo", "flds unit-separated");
 }
 
+// --- T1 (review 5291226535): zip-phase failure must not truncate an
+// existing destination (atomic publish). Unix-only: uses chmod 0 to make a
+// file that passes `is_file()` but fails `File::open`. ---
+
+#[cfg(unix)]
+#[test]
+fn failed_write_preserves_existing_destination() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.apkg");
+    std::fs::write(&out, b"SENTINEL_APKG").unwrap();
+
+    // Media path exists as a regular file (plan_media ok) but cannot be read.
+    let media = dir.path().join("secret.mp3");
+    std::fs::write(&media, b"bytes").unwrap();
+    let mut perms = std::fs::metadata(&media).unwrap().permissions();
+    perms.set_mode(0o000);
+    std::fs::set_permissions(&media, perms).unwrap();
+
+    let mut deck = Deck::new(1, "d");
+    deck.add_note(Note::new(simple_model(), ["a", "b"]).unwrap());
+    let pkg = Package::new(deck).media_files([media.clone()]);
+    let err = pkg.write_to_file_at(&out, 1_600_000_000.0).unwrap_err();
+    assert!(
+        matches!(err, Error::Io(_)),
+        "open/read failure maps to Io: {err:?}"
+    );
+
+    assert_eq!(
+        std::fs::read(&out).unwrap(),
+        b"SENTINEL_APKG",
+        "destination must not be truncated on zip-phase failure"
+    );
+
+    // Cleanup so tempdir can remove the file.
+    let mut perms = std::fs::metadata(&media).unwrap().permissions();
+    perms.set_mode(0o600);
+    std::fs::set_permissions(&media, perms).unwrap();
+}
+
+// --- T2 (review 5291226535): a successful write atomically replaces an
+// existing destination file. ---
+
+#[test]
+fn successful_write_replaces_preexisting_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.apkg");
+    std::fs::write(&out, b"OLD").unwrap();
+
+    let mut deck = Deck::new(123456, "foodeck");
+    deck.add_note(Note::new(simple_model(), ["a", "b"]).unwrap());
+    Package::new(deck)
+        .write_to_file_at(&out, 1_600_000_000.0)
+        .unwrap();
+
+    let bytes = std::fs::read(&out).unwrap();
+    assert_ne!(bytes, b"OLD");
+    let mut z = open_zip(&out);
+    assert!(entry_names(&z).contains("collection.anki2"));
+    assert!(entry_names(&z).contains("media"));
+}
+
+// --- T3 (review 5291226535): fixed timestamp => byte-identical packages ---
+// across time (pinned zip mtimes, not wall clock). Sleep > DOS 2s resolution
+// between writes so any wall-clock leak changes bytes.
+
+#[test]
+fn fixed_timestamp_writes_are_byte_identical() {
+    let mut deck = Deck::new(123456, "foodeck");
+    deck.add_note(Note::new(simple_model(), ["a", "b"]).unwrap());
+    let pkg = Package::new(deck);
+
+    let dir = tempfile::tempdir().unwrap();
+    let p1 = dir.path().join("a.apkg");
+    let p2 = dir.path().join("b.apkg");
+    pkg.write_to_file_at(&p1, 1_600_000_000.0).unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(2)); // > DOS 2s resolution
+    pkg.write_to_file_at(&p2, 1_600_000_000.0).unwrap();
+
+    let b1 = std::fs::read(&p1).unwrap();
+    let b2 = std::fs::read(&p2).unwrap();
+    assert_eq!(
+        b1, b2,
+        "pinned zip mtimes + hermetic ids must yield identical bytes"
+    );
+}
+
 // --- T7 end-to-end: suspend via cached cards -> queue = -1 ---
 
 #[test]
