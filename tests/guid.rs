@@ -6,6 +6,10 @@ fn public_path_guid_for() {
 }
 
 #[test]
-fn public_path_base91_table() {
-    assert_eq!(genanki::BASE91_TABLE.len(), 91);
+fn public_module_path_base91_table() {
+    assert_eq!(genanki::guid::BASE91_TABLE.len(), 91);
+    assert_eq!(
+        genanki::guid::BASE91_TABLE,
+        b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&()*+,-./:;<=>?@[]^_`{|}~"
+    );
 }
