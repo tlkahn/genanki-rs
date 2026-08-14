@@ -116,4 +116,36 @@ mod tests {
             assert!(APKG_SCHEMA.contains(idx), "missing index {idx}");
         }
     }
+
+    #[test]
+    fn schema_preserves_sfld_integer_quirk() {
+        // Upstream Anki/genanki quirk: sfld typed integer (not text). Exact spacing.
+        assert!(
+            APKG_SCHEMA.contains("sfld            integer not null"),
+            "notes.sfld integer quirk drifted"
+        );
+    }
+
+    #[test]
+    fn schema_bytes_match_upstream_v0_13_0_fingerprint() {
+        // SHA-256 of the APKG_SCHEMA string body from kerrickstaley/genanki
+        // v0.13.0 apkg_schema.py (byte-identical on v1.13.1). Includes leading
+        // and trailing newlines from the Python triple-quoted string.
+        // Regenerator (not run in CI; paste into test module comments):
+        //   python3 - <<'PY'
+        //   import hashlib, re, pathlib, sys
+        //   text = pathlib.Path(sys.argv[1]).read_text()
+        //   body = re.search(r'pub const APKG_SCHEMA: &str = r#"(.*?)"#;', text, re.S).group(1)
+        //   print(len(body.encode()), hashlib.sha256(body.encode()).hexdigest())
+        //   PY
+        //   # src/apkg/schema.rs APKG_SCHEMA
+        use sha2::{Digest, Sha256};
+        let dig = Sha256::digest(APKG_SCHEMA.as_bytes());
+        assert_eq!(APKG_SCHEMA.len(), 2861, "APKG_SCHEMA UTF-8 length drifted");
+        assert_eq!(
+            format!("{dig:x}"),
+            "a8e071f2f15c0cfbeb75fcdc68571ed2686b089186862bcb26acdb02596fee91",
+            "APKG_SCHEMA drifted from genanki v0.13.0"
+        );
+    }
 }
