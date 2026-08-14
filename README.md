@@ -11,11 +11,16 @@ Anki project in any way.*
 
 ## Status
 
-Work in progress. See [Issue #1](../../issues/1) for the full feature
-specification and roadmap. Phases 1-5 are implemented: GUIDs, models with
-`req` computation, notes/cards/cloze, `.apkg` writing, built-in models, and
-this documentation. The crate is `write-only`: it produces `.apkg` files, it
-does not read them.
+v0.1.0-ready (initial release candidate; not yet published to crates.io). All
+six phases of the epic are implemented: GUIDs, models with `req` computation,
+notes/cards/cloze, `.apkg` writing, built-in models, hardening (property tests
+for the cloze parser and invalid-HTML scanner, a ~10k-note smoke test, a
+manual Anki import artifact, CI on Linux + macOS), and this documentation. See
+[Issue #1](../../issues/1) for the full specification, the
+[CHANGELOG](../../blob/main/CHANGELOG.md) for release notes, and
+[doc/publish-checklist.md](../../blob/main/doc/publish-checklist.md) for the
+crates.io readiness gate. The crate is `write-only`: it produces `.apkg`
+files, it does not read them.
 
 ## Notes
 
@@ -282,6 +287,11 @@ const MY_DECK_ID: i64 = 2059400110;
   is out of scope.
 - **No GUI import automation.** Anki desktop/AnkiDroid import the generated
   files themselves; the crate does not drive Anki.
+- **No newer collection formats.** Packages are written with the legacy
+  `collection.anki2` sqlite format (what Anki's import path and Python
+  genanki v0.13.x use); see the
+  [format research note](../../blob/main/doc/research/anki-package-formats.md).
+  Writing `collection.anki21*` is out of scope for v0.1.0.
 
 ## License
 
