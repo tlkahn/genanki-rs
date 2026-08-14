@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+Cargo.lock
+.DS_Store
+*.apkg
+*.anki2
+.idea/
+.vscode/
