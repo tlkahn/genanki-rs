@@ -66,7 +66,7 @@
 
 pub mod error;
 
-// Domain modules (filled in later phases). Public so paths stabilize early.
+// Domain modules; public so crate paths stay stable across phases.
 pub mod apkg;
 pub mod builtin_models;
 pub mod card;

@@ -65,3 +65,42 @@ pub fn col_json(conn: &Connection, col: &str) -> serde_json::Value {
         .unwrap();
     serde_json::from_str(&raw).unwrap()
 }
+
+/// Builtin Basic-family CSS as written into `col.models`; independent literal
+/// (Python genanki v0.13.0 builtin_models.py). Keep in sync with the unit
+/// `EXPECTED_BASIC_CSS` in `src/builtin_models.rs` (trailing newline included).
+pub fn expected_basic_css() -> &'static str {
+    concat!(
+        ".card {\n",
+        " font-family: arial;\n",
+        " font-size: 20px;\n",
+        " text-align: center;\n",
+        " color: black;\n",
+        " background-color: white;\n",
+        "}\n",
+    )
+}
+
+/// Builtin Cloze CSS as written into `col.models`; independent literal
+/// (Python genanki v0.13.0 builtin_models.py). Keep in sync with the unit
+/// `EXPECTED_CLOZE_CSS` in `src/builtin_models.rs`: the final `.nightMode
+/// .cloze` segment has **no** trailing newline (Python concatenation).
+pub fn expected_cloze_css() -> &'static str {
+    concat!(
+        ".card {\n",
+        " font-family: arial;\n",
+        " font-size: 20px;\n",
+        " text-align: center;\n",
+        " color: black;\n",
+        " background-color: white;\n",
+        "}\n",
+        "\n",
+        ".cloze {\n",
+        " font-weight: bold;\n",
+        " color: blue;\n",
+        "}\n",
+        ".nightMode .cloze {\n",
+        " color: lightblue;\n",
+        "}",
+    )
+}

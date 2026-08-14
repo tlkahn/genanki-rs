@@ -545,17 +545,17 @@ mod tests {
 
     #[test]
     fn from_ref_model_into_arc() {
-        let m = Model::new(1559383000, "Basic (genanki)")
-            .field(Field::new("Front"))
-            .field(Field::new("Back"));
-        let arc: std::sync::Arc<Model> = (&m).into();
+        let arc: std::sync::Arc<Model> = (&*crate::BASIC_MODEL).into();
         assert_eq!(arc.id, 1559383000);
         assert_eq!(arc.name, "Basic (genanki)");
 
         // Powers `Note::new(&*BASIC_MODEL, fields)?` without an owned clone
         // at the call site.
-        let note = crate::Note::new(&m, ["a", "b"]).unwrap();
+        let note = crate::Note::new(&*crate::BASIC_MODEL, ["a", "b"]).unwrap();
         assert_eq!(note.model().id, 1559383000);
+        // Shared path: Into<Arc<Model>> cloned; ids equal, not necessarily
+        // the same Arc. CSS must round-trip byte-exact.
+        assert_eq!(note.model().css, crate::BASIC_MODEL.css);
     }
 
     #[test]

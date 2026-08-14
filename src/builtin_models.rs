@@ -80,8 +80,11 @@ pub static BASIC_AND_REVERSED_CARD_MODEL: LazyLock<Model> = LazyLock::new(|| {
 
 /// Anki's stock "Basic (optional reversed card)" model under the `(genanki)`
 /// name. Fields: `Front`, `Back`, `Add Reverse` (Arial). Two templates: `Card 1`
-/// as [`BASIC_MODEL`]; `Card 2`'s `qfmt` is a Mustache section on `Add
-/// Reverse`, so it is generated **only** when `Add Reverse` is non-empty.
+/// as [`BASIC_MODEL`]; `Card 2` is emitted only when **both** `Back` and
+/// `Add Reverse` are non-empty. The reverse template's `qfmt` is
+/// `{{#Add Reverse}}{{Back}}{{/Add Reverse}}`; required-field computation
+/// yields `All` over those two field ords (same as Python genanki), so an
+/// empty `Back` blanks the whole section body and suppresses Card 2.
 pub static BASIC_OPTIONAL_REVERSED_CARD_MODEL: LazyLock<Model> = LazyLock::new(|| {
     Model::new(1382232460, "Basic (optional reversed card) (genanki)")
         .field(arial("Front"))
@@ -120,6 +123,23 @@ pub static BASIC_TYPE_IN_THE_ANSWER_MODEL: LazyLock<Model> = LazyLock::new(|| {
 /// single-field auto-pad). One template `Cloze`: `{{cloze:Text}}` /
 /// `{{cloze:Text}}<br>` + `{{Back Extra}}`. Cards are generated per unique
 /// `{{cN::...}}` deletion.
+///
+/// # Examples
+///
+/// Same call shape as the README Cloze section: builtin statics are
+/// `LazyLock<Model>`, so pass `&*CLOZE_MODEL` (via `From<&Model> for
+/// `Arc<Model>`).
+///
+/// ```
+/// use genanki::{CLOZE_MODEL, Note};
+/// let note = Note::new(
+///     &*CLOZE_MODEL,
+///     ["{{c1::Rome}} is the capital of {{c2::Italy}}", ""],
+/// )?;
+/// assert_eq!(note.fields().len(), 2);
+/// assert_eq!(note.fields()[1], "");
+/// # Ok::<(), genanki::Error>(())
+/// ```
 pub static CLOZE_MODEL: LazyLock<Model> = LazyLock::new(|| {
     Model::new(1550428389, "Cloze (genanki)")
         .model_type(crate::model::ModelType::Cloze)
@@ -138,9 +158,44 @@ mod tests {
     use crate::model::Model;
     use crate::model::ModelType;
 
+    // Python genanki v0.13.0 builtin_models.py. Independent literals - do
+    // NOT reference super::BASIC_CSS / super::CLOZE_CSS: corrupting a
+    // production const must fail this table, and the table must not silently
+    // track it. (concat! keeps the single leading space per line; the plan's
+    // `\`-continuation form would strip it via Rust line-continuation.)
+    const EXPECTED_BASIC_CSS: &str = concat!(
+        ".card {\n",
+        " font-family: arial;\n",
+        " font-size: 20px;\n",
+        " text-align: center;\n",
+        " color: black;\n",
+        " background-color: white;\n",
+        "}\n",
+    );
+
+    // Final .nightMode block has NO trailing newline (Python concat).
+    const EXPECTED_CLOZE_CSS: &str = concat!(
+        ".card {\n",
+        " font-family: arial;\n",
+        " font-size: 20px;\n",
+        " text-align: center;\n",
+        " color: black;\n",
+        " background-color: white;\n",
+        "}\n",
+        "\n",
+        ".cloze {\n",
+        " font-weight: bold;\n",
+        " color: blue;\n",
+        "}\n",
+        ".nightMode .cloze {\n",
+        " color: lightblue;\n",
+        "}",
+    );
+
     /// One row of the byte-exact fingerprint table for the five builtins.
-    /// `css` is `BASIC_CSS` for the four Basic-family models and `CLOZE_CSS`
-    /// for the cloze model (Python concatenates two literals there).
+    /// `css` is `EXPECTED_BASIC_CSS` for the four Basic-family models and
+    /// `EXPECTED_CLOZE_CSS` for the cloze model (Python concatenates two
+    /// literals there).
     struct Expect {
         model: &'static Model,
         id: i64,
@@ -164,7 +219,7 @@ mod tests {
                 model_type: ModelType::FrontBack,
                 fields: &[("Front", "Arial"), ("Back", "Arial")],
                 templates: &[("Card 1", "{{Front}}", BASIC_AFMT)],
-                css: super::BASIC_CSS,
+                css: EXPECTED_BASIC_CSS,
             },
             Expect {
                 model: &super::BASIC_AND_REVERSED_CARD_MODEL,
@@ -176,7 +231,7 @@ mod tests {
                     ("Card 1", "{{Front}}", BASIC_AFMT),
                     ("Card 2", "{{Back}}", REVERSED_AFMT),
                 ],
-                css: super::BASIC_CSS,
+                css: EXPECTED_BASIC_CSS,
             },
             Expect {
                 model: &super::BASIC_OPTIONAL_REVERSED_CARD_MODEL,
@@ -196,7 +251,7 @@ mod tests {
                         REVERSED_AFMT,
                     ),
                 ],
-                css: super::BASIC_CSS,
+                css: EXPECTED_BASIC_CSS,
             },
             Expect {
                 model: &super::BASIC_TYPE_IN_THE_ANSWER_MODEL,
@@ -209,7 +264,7 @@ mod tests {
                     "{{Front}}\n\n{{type:Back}}",
                     "{{Front}}\n\n<hr id=answer>\n\n{{type:Back}}",
                 )],
-                css: super::BASIC_CSS,
+                css: EXPECTED_BASIC_CSS,
             },
             Expect {
                 model: &super::CLOZE_MODEL,
@@ -222,7 +277,7 @@ mod tests {
                     "{{cloze:Text}}",
                     "{{cloze:Text}}<br>\n{{Back Extra}}",
                 )],
-                css: super::CLOZE_CSS,
+                css: EXPECTED_CLOZE_CSS,
             },
         ];
 
@@ -251,6 +306,11 @@ mod tests {
             );
             assert_eq!(m.css, e.css, "css fingerprint of {}", e.name);
         }
+
+        // Python parity: BASIC family ends with the trailing newline, the
+        // cloze literal does not (Python concatenation artifact).
+        assert!(EXPECTED_BASIC_CSS.ends_with('\n'));
+        assert!(!EXPECTED_CLOZE_CSS.ends_with('\n'));
     }
 
     #[test]
@@ -281,6 +341,20 @@ mod tests {
         assert_eq!(req[0].field_ords, vec![0]);
         assert_eq!(req[1].kind, crate::req::ReqKind::All);
         assert_eq!(req[1].field_ords, vec![1, 2]);
+    }
+
+    #[test]
+    fn optional_reversed_empty_back_suppresses_card2() {
+        // req Card2 = All[Back, Add Reverse]: empty Back blanks the section
+        // body, so the reverse card is suppressed even with Add Reverse set.
+        let mut n = crate::Note::new(
+            &*super::BASIC_OPTIONAL_REVERSED_CARD_MODEL,
+            ["France", "", "y"],
+        )
+        .unwrap();
+        let cards = n.cards().unwrap();
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].ord, 0);
     }
 
     #[test]

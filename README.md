@@ -26,7 +26,7 @@ Here's how you create a `Note`:
 
 ```rust
 let my_note = genanki::Note::new(
-    my_model,                                  // Model (or Arc<Model>)
+    my_model,                                  // Model, Arc<Model>, or &Model
     ["Capital of Argentina", "Buenos Aires"],  // fields, encoded as HTML
 )?;
 ```
@@ -59,13 +59,14 @@ supply custom CSS.
 
 You need to pass a `model_id` so that Anki can keep track of your model. It's
 important that you use a unique `model_id` for each `Model` you define.
-Generate one in the range `1 << 30` to `1 << 31` (for example with
-`rand::random::<i64>() % (1 << 31) + (1 << 30)` or any other source of
-randomness), and **hardcode it** into your model definition:
+Generate a unique `model_id` once in the range `1 << 30` to `1 << 31` (any
+randomness source is fine - for example Python's `random.randrange(1 << 30,
+1 << 31)` if you prototype there), then **hardcode** it as an `i64` literal in
+your model definition:
 
 ```rust
-// i64 id; Anki convention is a Unix-ms-style timestamp.
-let my_model = Model::new(1607392319, "Simple Model") /* ... */;
+const MY_MODEL_ID: i64 = 1607392319; // i64 id; Anki convention is a Unix-ms-style timestamp.
+let my_model = Model::new(MY_MODEL_ID, "Simple Model") /* ... */;
 ```
 
 ## Generating a Deck/Package
@@ -182,7 +183,7 @@ v0.13.x `builtin_models.py`, and re-exported at the crate root:
 | ------ | -------- | ----- |
 | `BASIC_MODEL` | 1559383000 | `Basic (genanki)`: `Front` / `Back`, one card. |
 | `BASIC_AND_REVERSED_CARD_MODEL` | 1485830179 | Always generates the forward **and** the reversed card. |
-| `BASIC_OPTIONAL_REVERSED_CARD_MODEL` | 1382232460 | Reversed card only when the `Add Reverse` field is non-empty. |
+| `BASIC_OPTIONAL_REVERSED_CARD_MODEL` | 1382232460 | Reversed card only when **both** `Back` and `Add Reverse` are non-empty. |
 | `BASIC_TYPE_IN_THE_ANSWER_MODEL` | 1305534440 | `{{type:Back}}`: type the answer on the front. |
 | `CLOZE_MODEL` | 1550428389 | Cloze deletions; fields `Text` + `Back Extra` (**two required**). |
 
@@ -219,10 +220,14 @@ back; pass `""` if unused):
 
 ```rust
 let my_note = genanki::Note::new(
-    genanki::CLOZE_MODEL,
+    &*genanki::CLOZE_MODEL,
     ["{{c1::Rome}} is the capital of {{c2::Italy}}", ""],
 )?;
 ```
+
+Note the `&*` before `CLOZE_MODEL`: the builtin statics are
+`LazyLock<Model>`, and `&*` derefs them to `&Model` (see the Builtin Models
+section for the same pattern with `BASIC_MODEL`).
 
 One card is generated per unique deletion number (`{{c1::...}}` and
 `{{c2::...}}` produce two cards). Passing a single field is an error
