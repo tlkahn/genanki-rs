@@ -306,12 +306,17 @@ impl Note {
                 .position(|f| f.name == name)
                 .map_or("", |idx| self.fields[idx].as_str());
             for m in cloze_ord_re().captures_iter(value) {
-                let n: i32 = m[1].parse().expect("cloze capture is all digits");
-                if n > 0 {
-                    let ord = n - 1;
-                    if !ords.contains(&ord) {
-                        ords.push(ord);
-                    }
+                let Ok(n) = m[1].parse::<i64>() else {
+                    continue;
+                };
+                if n <= 0 {
+                    continue;
+                }
+                let Ok(ord) = i32::try_from(n - 1) else {
+                    continue;
+                };
+                if !ords.contains(&ord) {
+                    ords.push(ord);
                 }
             }
         }
@@ -984,6 +989,35 @@ mod tests {
             let ords: Vec<i32> = n.cards().unwrap().iter().map(|c| c.ord).collect();
             assert_eq!(ords, [0, 1], "qfmt: {qfmt}");
         }
+    }
+
+    #[test]
+    fn cloze_oversized_ord_is_skipped_not_panic() {
+        // 40 nines: parses as digits but overflows i32/i64 ord path; must not panic.
+        let huge = format!("{{{{c{}::x}}}}", "9".repeat(40));
+        assert_eq!(cloze_ords(&[huge.as_str(), ""]), [0]); // overflow-only -> default 0
+    }
+
+    #[test]
+    fn cloze_oversized_ord_does_not_drop_valid_siblings() {
+        let fields = format!("{{{{c1::ok}}}} {{{{c{}::nope}}}}", "9".repeat(40));
+        assert_eq!(cloze_ords(&[fields.as_str(), ""]), [0]);
+    }
+
+    #[test]
+    fn cloze_ord_just_inside_i32_max_is_kept() {
+        // n - 1 == i32::MAX  =>  n == i32::MAX as i64 + 1
+        let n = i32::MAX as i64 + 1;
+        let field = format!("{{{{c{n}::edge}}}}");
+        assert_eq!(cloze_ords(&[field.as_str(), ""]), [i32::MAX]);
+    }
+
+    #[test]
+    fn cloze_ord_just_outside_i32_max_is_skipped() {
+        // n - 1 == i32::MAX as i64 + 1  => does not fit i32
+        let n = i32::MAX as i64 + 2;
+        let field = format!("{{{{c{n}::edge}}}}");
+        assert_eq!(cloze_ords(&[field.as_str(), ""]), [0]);
     }
 
     // --- Cache, suspend, invalidation (T11) ---
