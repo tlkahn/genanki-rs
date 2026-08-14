@@ -969,7 +969,7 @@ mod tests {
     }
 
     #[test]
-    fn cloze_indicies_do_not_start_at_one() {
+    fn cloze_indices_do_not_start_at_one() {
         assert_eq!(
             cloze_ords(&[
                 "{{c2::Mitochondria}} are the {{c3::powerhouses}} of the cell",
