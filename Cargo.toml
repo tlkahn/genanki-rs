@@ -2,6 +2,18 @@
 name = "genanki"
 version = "0.1.0"
 edition = "2024"
-publish = ["rsproxy-sparse"]
+description = "Generate Anki .apkg decks programmatically"
+license = "MIT"
+repository = "https://github.com/tlkahn/genanki-rs"
+homepage = "https://github.com/tlkahn/genanki-rs"
+documentation = "https://docs.rs/genanki"
+readme = "README.md"
+keywords = ["anki", "flashcards", "apkg", "deck"]
+categories = ["encoding", "multimedia"]
+exclude = ["doc/", ".github/"]
 
 [dependencies]
+# Intentionally empty in Phase 0. Real deps land per phase (see epic #1).
+
+[dev-dependencies]
+# Empty until a phase needs tempfile / etc.
