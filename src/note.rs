@@ -454,7 +454,7 @@ fn warn_invalid_html(field: &str) {
     let invalid = find_invalid_html_tags(field);
     if !invalid.is_empty() {
         log::warn!(
-            "Field contained the following invalid HTML tags. Make sure you are calling html escaping if your field data is not already HTML-encoded: {}",
+            "Field contained the following invalid HTML tags. Make sure you are calling html.escape() if your field data isn't already HTML-encoded: {}",
             invalid.join(" ")
         );
     }
@@ -792,6 +792,8 @@ mod tests {
         assert_eq!(logs.len(), 1);
         assert!(logs[0].contains("invalid HTML tags"));
         assert!(logs[0].contains("<$>"));
+        assert!(logs[0].contains("html.escape()"), "warn text must match Python prose: {}", logs[0]);
+        assert!(logs[0].contains("isn't"), "warn text must match Python prose: {}", logs[0]);
     }
 
     #[test]
@@ -1079,6 +1081,8 @@ mod tests {
         let logs = LOGS.lock().unwrap().clone();
         assert_eq!(logs.len(), 1);
         assert!(logs[0].contains("<$>"));
+        assert!(logs[0].contains("html.escape()"), "warn text must match Python prose: {}", logs[0]);
+        assert!(logs[0].contains("isn't"), "warn text must match Python prose: {}", logs[0]);
     }
 
     // --- Formatting helpers (T12) ---
