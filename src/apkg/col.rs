@@ -131,4 +131,35 @@ mod tests {
     fn col_seed_has_default_deck_name() {
         assert!(APKG_COL.contains("\"name\": \"Default\""));
     }
+
+    #[test]
+    fn col_preserves_cur_model_token() {
+        assert!(
+            APKG_COL.contains("\"curModel\": \"1425279151691\""),
+            "col seed curModel token drifted"
+        );
+    }
+
+    #[test]
+    fn col_bytes_match_upstream_v0_13_0_fingerprint() {
+        // SHA-256 of the APKG_COL string body from kerrickstaley/genanki
+        // v0.13.0 apkg_col.py (byte-identical on v1.13.1). Includes leading
+        // and trailing newlines from the Python triple-quoted string.
+        // Regenerator (not run in CI; paste into test module comments):
+        //   python3 - <<'PY'
+        //   import hashlib, re, pathlib, sys
+        //   text = pathlib.Path(sys.argv[1]).read_text()
+        //   body = re.search(r'pub const APKG_COL: &str = r#"(.*?)"#;', text, re.S).group(1)
+        //   print(len(body.encode()), hashlib.sha256(body.encode()).hexdigest())
+        //   PY
+        //   # src/apkg/col.rs APKG_COL
+        use sha2::{Digest, Sha256};
+        let dig = Sha256::digest(APKG_COL.as_bytes());
+        assert_eq!(APKG_COL.len(), 2271, "APKG_COL UTF-8 length drifted");
+        assert_eq!(
+            format!("{dig:x}"),
+            "9ce03b85b9fddde5fcf3e09dfa0962c461b4e593cf38ceb6371f2536bf1cb1db",
+            "APKG_COL drifted from genanki v0.13.0"
+        );
+    }
 }
