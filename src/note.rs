@@ -1,6 +1,9 @@
-//! Note representation: fields, tags, GUID/sort/due, and card generation. (Phase 3)
+//! Note representation: fields, tags, GUID/sort/due, and card generation, plus
+//! the public [`find_invalid_html_tags`] HTML scanner. (Phase 3)
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+use regex::Regex;
 
 use crate::model::Model;
 use crate::{Error, Result};
@@ -356,24 +359,28 @@ impl Note {
 }
 
 /// `{{...cloze:Name}}` - cloze filter field names in a qfmt.
+static CLOZE_FIELD_NAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\{\{[^}]*?cloze:(?:[^}]?:)*(.+?)}}").expect("known-good cloze field name regex")
+});
+
 fn cloze_field_name_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"\{\{[^}]*?cloze:(?:[^}]?:)*(.+?)}}")
-            .expect("known-good cloze field name regex")
-    })
+    &CLOZE_FIELD_NAME_RE
 }
 
 /// `<%cloze:Name%>` - legacy cloze filter field names in a qfmt.
+static CLOZE_FIELD_NAME_OLD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<%cloze:(.+?)%>").expect("known-good legacy cloze regex"));
+
 fn cloze_field_name_old_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"<%cloze:(.+?)%>").expect("known-good legacy cloze regex"))
+    &CLOZE_FIELD_NAME_OLD_RE
 }
 
 /// `{{cN::...}}` with DOTALL - cloze ord references inside field values.
+static CLOZE_ORD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)\{\{c(\d+)::.+?}}").expect("known-good cloze ord regex"));
+
 fn cloze_ord_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(?s)\{\{c(\d+)::.+?}}").expect("known-good cloze ord regex"))
+    &CLOZE_ORD_RE
 }
 
 /// Collect tags from any iterator and validate every element.
@@ -409,20 +416,22 @@ fn validate_tag(tag: &str) -> Result<()> {
 //      closing `>`) matches `^/?[a-zA-Z0-9]+(?: .*|/?)>$` or starts with
 //      `!--` or `![CDATA[`; otherwise it is invalid.
 
-use regex::Regex;
-use std::sync::OnceLock;
-
 /// `(?s)<.*?>` - every tag from `<` to the first `>`, spanning newlines.
+static TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)<.*?>").expect("known-good tag regex"));
+
 fn tag_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(?s)<.*?>").expect("known-good tag regex"))
+    &TAG_RE
 }
 
 /// `^/?[a-zA-Z0-9]+(?: .*|/?)>$` applied to a tag body that includes the
 /// closing `>`. No DOTALL: `.*` must not span newlines (Python parity).
+static VALID_BODY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^/?[a-zA-Z0-9]+(?: .*|/?)>$").expect("known-good body regex")
+});
+
 fn valid_body_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^/?[a-zA-Z0-9]+(?: .*|/?)>$").expect("known-good body regex"))
+    &VALID_BODY_RE
 }
 
 /// Return the invalid HTML tag substrings in `field` (Python findall parity).
