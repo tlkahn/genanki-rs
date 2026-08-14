@@ -935,17 +935,17 @@ No unresolved blockers. Implement on branch `issue/6-deck-package` with strict T
 
 ## 11. PR checklist (when implementing)
 
-- [ ] Every work item went RED before GREEN
-- [ ] Only `rusqlite` (bundled) + `zip` + `tempfile` added (plus existing deps)
-- [ ] No builtin models / README feature creep (Phase 5)
-- [ ] No `write_to_collection_from_addon`
-- [ ] Basename collision + missing media errors covered
-- [ ] Hermetic timestamp + modern-now ids covered
-- [ ] Suspend/due/flds/tags asserted in sqlite
-- [ ] Multi-deck + description covered
-- [ ] `cargo fmt`, `clippy -D warnings`, `test`, `doc` green
-- [ ] Issue #6 checkboxes updated in PR description
-- [ ] Plan status -> IMPLEMENTED + PR link
+- [x] Every work item went RED before GREEN
+- [x] Only `rusqlite` (bundled) + `zip` + `tempfile` added (plus existing deps)
+- [x] No builtin models / README feature creep (Phase 5)
+- [x] No `write_to_collection_from_addon`
+- [x] Basename collision + missing media errors covered
+- [x] Hermetic timestamp + modern-now ids covered
+- [x] Suspend/due/flds/tags asserted in sqlite
+- [x] Multi-deck + description covered
+- [x] `cargo fmt`, `clippy -D warnings`, `test`, `doc` green
+- [x] Issue #6 checkboxes updated in PR description
+- [x] Plan status -> IMPLEMENTED + PR link
 
 ## 12. Quick reference - Python -> Rust map
 
