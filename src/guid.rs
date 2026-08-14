@@ -33,10 +33,11 @@ pub fn guid_for(values: &[&str]) -> String {
 ///
 /// Mirrors Python's `while hash_int > 0` loop: zero encodes to the empty string.
 fn base91_encode(mut n: u64) -> String {
+    const RADIX: u64 = BASE91_TABLE.len() as u64;
     let mut digits_reversed = Vec::new();
     while n > 0 {
-        digits_reversed.push(BASE91_TABLE[(n % 91) as usize] as char);
-        n /= 91;
+        digits_reversed.push(BASE91_TABLE[(n % RADIX) as usize] as char);
+        n /= RADIX;
     }
     digits_reversed.iter().rev().collect()
 }
@@ -136,5 +137,13 @@ mod tests {
     fn base91_encode_zero_is_empty_string() {
         // Python's `while hash_int > 0` loop never runs for 0.
         assert_eq!(base91_encode(0), "");
+    }
+
+    #[test]
+    fn base91_encode_small_values() {
+        // Characterization of the alphabet positions: BASE91_TABLE[1] == 'b',
+        // and 91 == 1 * 91 + 0 encodes as 'a' then 'b', reversed -> "ba".
+        assert_eq!(base91_encode(1), "b");
+        assert_eq!(base91_encode(91), "ba");
     }
 }
