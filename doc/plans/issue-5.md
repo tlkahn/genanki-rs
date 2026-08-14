@@ -245,7 +245,7 @@ for field in fields:
   if !invalid.is_empty():
     log::warn!(
       "Field contained the following invalid HTML tags. Make sure you are \
-       calling html escaping if your field data is not already HTML-encoded: {}",
+       calling html.escape() if your field data isn't already HTML-encoded: {}",
       invalid.join(" ")
     )
 ```
@@ -638,12 +638,12 @@ No unresolved blockers. Implement on branch `issue/5-note-card` with strict TDD.
 
 ## 11. PR checklist (when implementing)
 
-- [ ] Every work item went RED before GREEN
-- [ ] Only `regex` + `log` added (plus existing deps)
-- [ ] No `write_to_db` / Package / Deck feature creep
-- [ ] Cloze default ord 0 when empty
-- [ ] HTML comment + CDATA goldens pass
-- [ ] GUID not scanned for HTML
-- [ ] `cargo fmt`, `clippy -D warnings`, `test`, `doc` green
-- [ ] Issue #5 checkboxes updated in PR description
-- [ ] Plan status -> IMPLEMENTED + PR link
+- [x] Every work item went RED before GREEN
+- [x] Only `regex` + `log` added (plus existing deps)
+- [x] No `write_to_db` / Package / Deck feature creep
+- [x] Cloze default ord 0 when empty
+- [x] HTML comment + CDATA goldens pass
+- [x] GUID not scanned for HTML
+- [x] `cargo fmt`, `clippy -D warnings`, `test`, `doc` green
+- [x] Issue #5 checkboxes updated in PR description
+- [x] Plan status -> IMPLEMENTED + PR link
