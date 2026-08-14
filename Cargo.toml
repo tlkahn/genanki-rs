@@ -16,6 +16,9 @@ exclude = ["doc/", ".github/"]
 # Phase 1: GUID hashing + error derive. Further deps land in later phases (epic #1).
 sha2 = "0.10"      # SHA-256 for note/card GUIDs (Python genanki parity)
 thiserror = "2"    # #[derive(Error)] for the crate error type
+# Phase 2: model JSON for col.models entries (nested null/bool/mixed-array objects).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [dev-dependencies]
 # Empty until a phase needs tempfile / etc.
