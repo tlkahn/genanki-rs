@@ -4,7 +4,7 @@
 ///
 /// Mirrors Python genanki's `itertools.count(int(timestamp * 1000))`: the
 /// first id is the start value, each subsequent id increments by one.
-pub struct IdGen {
+pub(crate) struct IdGen {
     /// The next id to hand out.
     next: i64,
 }
@@ -12,12 +12,12 @@ pub struct IdGen {
 impl IdGen {
     /// Create a generator whose first id is `start`.
     #[must_use]
-    pub fn new(start: i64) -> Self {
+    pub(crate) fn new(start: i64) -> Self {
         Self { next: start }
     }
 
     /// Return the current id and advance.
-    pub fn next_id(&mut self) -> i64 {
+    pub(crate) fn next_id(&mut self) -> i64 {
         let v = self.next;
         self.next = self.next.checked_add(1).expect("id_gen overflow");
         v
@@ -28,7 +28,7 @@ impl IdGen {
 ///
 /// Runs before any note/card inserts; equivalent to Python genanki running
 /// `APKG_SCHEMA` then `APKG_COL` on a fresh `collection.anki2`.
-pub fn init_schema(conn: &rusqlite::Connection) -> crate::Result<()> {
+pub(crate) fn init_schema(conn: &rusqlite::Connection) -> crate::Result<()> {
     conn.execute_batch(crate::apkg::schema::APKG_SCHEMA)?;
     conn.execute_batch(crate::apkg::col::APKG_COL)?;
     Ok(())
@@ -89,7 +89,7 @@ pub(crate) fn insert_card(
             card.ord,
             timestamp_secs as i64,
             -1i64,
-            0i64, // type (0 = non-Cloze)
+            0i64, // type (0 = new; Anki scheduling state, not model type)
             queue,
             due,
             0i64, // ivl

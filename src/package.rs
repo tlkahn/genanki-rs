@@ -65,18 +65,23 @@ impl Package {
         &mut self.decks
     }
 
-    /// Write the `.apkg` using the current wall-clock time.
+    /// Write the `.apkg` using the current wall-clock time (the timestamp
+    /// source for note/card ids and `mod` columns).
     ///
-    /// See [`Self::write_to_file_at`] for the hermetic variant.
+    /// See [`Self::write_to_file_at`] for the deterministic-timestamp variant.
     pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         self.write_to_file_at(path, now_secs())
     }
 
     /// Write the `.apkg` with a fixed timestamp (seconds since Unix epoch).
     ///
-    /// The timestamp drives the shared id generator (starting at
-    /// `timestamp * 1000`) and the `mod` column of notes/cards/models, so a
-    /// fixed value yields reproducible output.
+    /// The timestamp drives the shared id generator (first id =
+    /// `timestamp * 1000`), the `mod` column of notes/cards/models, and every
+    /// zip entry's mtime (pinned DOS datetime, clamped to 1980-01-01 ..
+    /// 2107-12-31). A fixed value therefore yields deterministic note/card
+    /// ids and `mod` columns, and **byte-identical package files across
+    /// runs**. The destination is only replaced once the whole package is
+    /// written, so a failure never truncates a pre-existing file.
     pub fn write_to_file_at<P: AsRef<Path>>(&self, path: P, timestamp_secs: f64) -> Result<()> {
         write_to_file_impl(&self.decks, &self.media_files, path, timestamp_secs)
     }
@@ -198,8 +203,7 @@ pub(crate) fn write_db(
     timestamp_secs: f64,
 ) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
-    tx.execute_batch(crate::apkg::schema::APKG_SCHEMA)?;
-    tx.execute_batch(crate::apkg::col::APKG_COL)?;
+    crate::apkg::db::init_schema(&tx)?;
     let mut id_gen = crate::apkg::db::IdGen::new((timestamp_secs * 1000.0) as i64);
     for deck in decks {
         deck.write_to_db(&tx, timestamp_secs, &mut id_gen)?;
@@ -210,9 +214,11 @@ pub(crate) fn write_db(
 
 /// Path-dedupe (first-seen wins) and validate media files.
 ///
-/// Errors with [`Error::MediaNotFound`] for a missing path, [`Error::MediaInvalidPath`]
-/// when a path has no usable basename, and [`Error::MediaBasenameCollision`]
-/// when two distinct paths share a basename.
+/// Per path, in order: dedupe, extract the basename (missing or non-UTF8 ->
+/// [`Error::MediaInvalidPath`]), require the path to be a file
+/// ([`Error::MediaNotFound`] otherwise, including directories), then reject
+/// a basename already owned by a different path
+/// ([`Error::MediaBasenameCollision`]).
 fn plan_media(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let mut out: Vec<PathBuf> = Vec::new();
     let mut seen_paths: HashSet<PathBuf> = HashSet::new();
@@ -222,14 +228,14 @@ fn plan_media(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
         if !seen_paths.insert(p.clone()) {
             continue; // path-dedupe, keep first
         }
-        if !p.is_file() {
-            return Err(Error::MediaNotFound { path: p.clone() });
-        }
         let base = p
             .file_name()
             .and_then(|s| s.to_str())
             .ok_or_else(|| Error::MediaInvalidPath { path: p.clone() })?
             .to_string();
+        if !p.is_file() {
+            return Err(Error::MediaNotFound { path: p.clone() });
+        }
         if let Some(prev) = basename_owner.get(&base) {
             if prev != p {
                 return Err(Error::MediaBasenameCollision {
@@ -289,6 +295,16 @@ mod tests {
         let missing = dir.path().join("nope.mp3");
         let err = plan_media(&[missing]).unwrap_err();
         assert!(matches!(err, Error::MediaNotFound { .. }));
+    }
+
+    #[test]
+    fn plan_media_invalid_basename_errors() {
+        // Basename-less paths: validated before the is_file() check, so they
+        // surface MediaInvalidPath even though `..` is not a file.
+        let err = plan_media(&[PathBuf::from("..")]).unwrap_err();
+        assert!(matches!(err, Error::MediaInvalidPath { .. }));
+        let err = plan_media(&[PathBuf::from("")]).unwrap_err();
+        assert!(matches!(err, Error::MediaInvalidPath { .. }));
     }
 
     #[test]

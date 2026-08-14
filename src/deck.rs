@@ -2,9 +2,10 @@
 
 /// An Anki deck: a named container of notes sharing a model registry.
 ///
-/// Owns its notes by value and a registry of models (explicit via
-/// [`Deck::add_model`], auto-registered from notes at write time). Written to
-/// an `.apkg` via [`Deck::write_to_file`] (or as part of a
+/// Owns its notes by value and a registry of models. The in-memory registry
+/// only ever holds explicit [`Deck::add_model`] entries; note models are
+/// auto-registered **at write time in the DB only** and do not mutate the
+/// deck. Written to an `.apkg` via [`Deck::write_to_file`] (or as part of a
 /// [`crate::Package`]).
 #[derive(Debug)]
 pub struct Deck {
@@ -22,6 +23,11 @@ pub struct Deck {
 
 impl Deck {
     /// Create a deck with the given id and name.
+    ///
+    /// The id is arbitrary; Anki convention is a Unix-ms-style timestamp. A
+    /// unique id is strongly recommended: **`id == 1` overwrites the seeded
+    /// Default deck** in `col.decks` at write time (only that entry is
+    /// replaced; the deck name still comes from this deck).
     #[must_use]
     pub fn new(id: i64, name: impl Into<String>) -> Self {
         Self {
@@ -86,8 +92,11 @@ impl Deck {
         self.models.insert(model.id, model);
     }
 
-    /// Model registry (explicit `add_model` entries only; auto-registered
-    /// note models appear after a write).
+    /// Model registry: explicit [`Self::add_model`] entries only.
+    ///
+    /// Note models are **not** added here; auto-registration happens at write
+    /// time inside the DB (`col.models`) and never mutates the deck, so a
+    /// write via `&self` leaves this map unchanged.
     #[must_use]
     #[cfg(test)]
     pub(crate) fn models(
@@ -190,7 +199,8 @@ impl Deck {
         Ok(())
     }
 
-    /// Write this deck to an `.apkg` file using the current wall-clock time.
+    /// Write this deck to an `.apkg` file using the current wall-clock time
+    /// (the timestamp source for note/card ids and `mod` columns).
     ///
     /// Shorthand for writing a single-deck package (same write engine as
     /// [`crate::Package::write_to_file`]); the deck is borrowed, so it can be
@@ -200,7 +210,11 @@ impl Deck {
     }
 
     /// Write this deck to an `.apkg` file with a fixed timestamp (seconds
-    /// since Unix epoch), driving reproducible note/card ids and `mod`.
+    /// since Unix epoch).
+    ///
+    /// Deterministic note/card ids and `mod` columns, plus byte-identical
+    /// package bytes across runs (zip entry mtimes are pinned to the same
+    /// timestamp). See [`crate::Package::write_to_file_at`] for details.
     pub fn write_to_file_at<P: AsRef<std::path::Path>>(
         &self,
         path: P,

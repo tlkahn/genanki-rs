@@ -6,12 +6,18 @@ use thiserror::Error;
 
 /// Errors produced by this crate.
 ///
-/// Variants will expand in later phases (IO, validation, template req, media, SQL).
+/// Current variant families (Phase 4): model/template validation
+/// ([`Error::TemplateReq`]), tag and field-count validation, deck/media write
+/// validation ([`Error::DeckInvalid`], [`Error::MediaNotFound`],
+/// [`Error::MediaInvalidPath`], [`Error::MediaBasenameCollision`]), and
+/// underlying [`Error::Io`] / [`Error::Sqlite`] / [`Error::Zip`] /
+/// [`Error::Json`] failures. [`Error::Internal`] guards structural
+/// invariants.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// Placeholder variant so the type is usable before real failures exist.
-    /// Remove once concrete variants land.
+    /// A structural invariant was violated (e.g. `col.decks` is not a JSON
+    /// object). Indicates a bug rather than a user error.
     #[error("internal error: {0}")]
     Internal(&'static str),
 

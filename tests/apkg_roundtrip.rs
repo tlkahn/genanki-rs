@@ -377,7 +377,7 @@ fn successful_write_replaces_preexisting_file() {
 
     let bytes = std::fs::read(&out).unwrap();
     assert_ne!(bytes, b"OLD");
-    let mut z = open_zip(&out);
+    let z = open_zip(&out);
     assert!(entry_names(&z).contains("collection.anki2"));
     assert!(entry_names(&z).contains("media"));
 }
