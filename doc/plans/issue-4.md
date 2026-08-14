@@ -88,7 +88,14 @@ If a future review wants zero new deps, the only alternative is a tiny internal 
 | Chinese dual | `[[0,"all",[0]],[1,"all",[1]]]` | same |
 | Hint section | `[[0,"any",[0,1]]]` | same |
 | `{{cloze:Text}}` + field `Back Extra` | `[[0,"all",[0,1]]]` (both; cloze key never hits `Text`) | `[[0,"all",[0]]]` (`Text` only) |
-| `{{Front}}\\n\\n{{type:Back}}` | `[[0,"all",[0]]]` | same (Back optional under "all" because Front still carries sentinel) |
+| `{{Front}}\\n\\n{{type:Back}}` | `[[0,"all",[0]]]` | `[[0,"any",[0,1]]]` (see note) |
+
+> Correction (verified against genanki 0.13.1): the `type:Back` row above was
+> mispredicted. With filter resolution, blanking Front still renders Back's
+> sentinel (via `{{type:Back}}`), so no field is "all"; both fields land in
+> the "any" fallback => `[[0,"any",[0,1]]]`. Python yields `[[0,"all",[0]]]`
+> only because chevron looks up the literal key `type:Back` (missing -> empty).
+> Keep `req_type_in_the_answer_front` asserting `Any [0,1]`.
 
 Upstream fixtures in issue #4 are the first three rows only - those must match **exactly**. Cloze/type rows are extra unit tests documenting our semantics.
 
@@ -700,12 +707,26 @@ Assert `[[0, "any", [0, 1]]]`.
 
 **RED**
 
+> Correction (verified against genanki 0.13.1): `"static only"` with one
+> field does **not** error - Python returns `[[0, "all", [0]]]` because the
+> "all" strategy blanks each field in turn and the never-present sentinel
+> makes every field "required". The `Error::TemplateReq` path is only
+> reachable with **zero fields** (neither strategy loop can run). The original
+> test below was replaced accordingly.
+
 ```rust
 #[test]
-fn req_errors_when_template_has_no_field_refs() {
+fn req_static_only_with_fields_requires_all() {
     let m = Model::new(1, "x")
         .field(Field::new("Q"))
         .template(Template::new("c", "static only", ""));
+    let req = m.req().unwrap();
+    assert_eq!(req, vec![ReqEntry { template_ord: 0, kind: ReqKind::All, field_ords: vec![0] }]);
+}
+
+#[test]
+fn req_errors_when_model_has_no_fields() {
+    let m = Model::new(1, "x").template(Template::new("c", "static only", ""));
     let err = m.req().unwrap_err();
     match err {
         Error::TemplateReq { qfmt } => assert!(qfmt.contains("static only")),
@@ -735,12 +756,17 @@ fn req_cloze_filter_requires_text_only() {
 
 #[test]
 fn req_type_in_the_answer_front() {
+    // With filter resolution, `type:Back` carries Back's value on the front,
+    // so blanking Front still renders Back's sentinel: no "all" field. Both
+    // fields fall to the "any" strategy (either one provides content).
+    // NOTE: Python genanki 0.13.x yields [[0, "all", [0]]] because chevron
+    // looks up the literal key `type:Back` (missing -> empty).
     let m = Model::new(1, "t")
         .field(Field::new("Front"))
         .field(Field::new("Back"))
         .template(Template::new("c", "{{Front}}\n\n{{type:Back}}", "x"));
     let req = m.req().unwrap();
-    assert_eq!(req[0].field_ords, vec![0]); // Front only under "all"
+    assert_eq!(req, vec![ReqEntry { template_ord: 0, kind: ReqKind::Any, field_ords: vec![0, 1] }]);
 }
 ```
 

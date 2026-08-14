@@ -7,6 +7,13 @@
 
 use std::collections::BTreeMap;
 
+use crate::model::{Field, Template};
+use crate::{Error, Result};
+
+/// Sentinel used to probe field presence during `req` computation (matches
+/// Python genanki's `sentinel = 'SeNtInEl'`).
+const SENTINEL: &str = "SeNtInEl";
+
 /// One template's required-field entry: `[tmpl_idx, "all"|"any", [field_ords...]]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReqEntry {
@@ -36,6 +43,75 @@ impl ReqKind {
             ReqKind::Any => "any",
         }
     }
+}
+
+/// Compute the Anki `req` list for a model's fields and templates.
+///
+/// Mirrors Python genanki `Model._req` (which reimplements Anki's logic): for
+/// each template, first try the "all" strategy (each field in turn blanked;
+/// if the sentinel disappears, the field is required), then the "any"
+/// strategy (each field in turn set to the sentinel; if the sentinel appears,
+/// the field suffices). Returns [`Error::TemplateReq`] when a template has no
+/// detectable required fields under either strategy.
+///
+/// Only `qfmt` is rendered. Filter tags such as `{{cloze:Text}}` resolve to
+/// the field name (documented divergence from Python/chevron, which looks up
+/// the literal key).
+#[must_use]
+pub fn compute_req(fields: &[Field], templates: &[Template]) -> Result<Vec<ReqEntry>> {
+    let field_names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+    let mut req = Vec::new();
+
+    for (template_ord, template) in templates.iter().enumerate() {
+        // Strategy "all": which fields, when blank, remove all meaningful content?
+        let mut required = Vec::new();
+        for (field_ord, name) in field_names.iter().copied().enumerate() {
+            let mut values: BTreeMap<&str, &str> = BTreeMap::new();
+            for n in field_names.iter().copied() {
+                values.insert(n, SENTINEL);
+            }
+            values.insert(name, "");
+            let rendered = render(&template.qfmt, &values);
+            if !rendered.contains(SENTINEL) {
+                required.push(field_ord as u32);
+            }
+        }
+
+        if !required.is_empty() {
+            req.push(ReqEntry {
+                template_ord: template_ord as u32,
+                kind: ReqKind::All,
+                field_ords: required,
+            });
+            continue;
+        }
+
+        // Strategy "any": which fields, when present alone, provide content?
+        for (field_ord, name) in field_names.iter().copied().enumerate() {
+            let mut values: BTreeMap<&str, &str> = BTreeMap::new();
+            for n in field_names.iter().copied() {
+                values.insert(n, "");
+            }
+            values.insert(name, SENTINEL);
+            let rendered = render(&template.qfmt, &values);
+            if rendered.contains(SENTINEL) {
+                required.push(field_ord as u32);
+            }
+        }
+
+        if required.is_empty() {
+            return Err(Error::TemplateReq {
+                qfmt: template.qfmt.clone(),
+            });
+        }
+        req.push(ReqEntry {
+            template_ord: template_ord as u32,
+            kind: ReqKind::Any,
+            field_ords: required,
+        });
+    }
+
+    Ok(req)
 }
 
 /// Render `template` with string field values (req-oriented Mustache subset).
@@ -265,5 +341,99 @@ mod tests {
     fn render_exact_key_wins_over_filter_strip() {
         let fields = fields(&[("cloze:Text", "LITERAL"), ("Text", "FIELD")]);
         assert_eq!(render("{{cloze:Text}}", &fields), "LITERAL");
+    }
+
+    // --- compute_req fixtures (Python genanki test_Model_req*) ---
+
+    use crate::model::{Field, Template};
+    use crate::Error;
+
+    fn simple_model() -> (Vec<Field>, Vec<Template>) {
+        (
+            vec![Field::new("AField"), Field::new("BField")],
+            vec![Template::new(
+                "card1",
+                "{{AField}}",
+                "{{FrontSide}}<hr id=\"answer\">{{BField}}",
+            )],
+        )
+    }
+
+    fn cn_model() -> (Vec<Field>, Vec<Template>) {
+        (
+            vec![
+                Field::new("Traditional"),
+                Field::new("Simplified"),
+                Field::new("English"),
+            ],
+            vec![
+                Template::new("Traditional", "{{Traditional}}", "{{FrontSide}}<hr id=\"answer\">{{English}}"),
+                Template::new("Simplified", "{{Simplified}}", "{{FrontSide}}<hr id=\"answer\">{{English}}"),
+            ],
+        )
+    }
+
+    fn hint_model() -> (Vec<Field>, Vec<Template>) {
+        (
+            vec![
+                Field::new("Question"),
+                Field::new("Hint"),
+                Field::new("Answer"),
+            ],
+            vec![Template::new(
+                "card1",
+                "{{Question}}{{#Hint}}<br>Hint: {{Hint}}{{/Hint}}",
+                "{{Answer}}",
+            )],
+        )
+    }
+
+    #[test]
+    fn req_simple_all() {
+        let (fields, templates) = simple_model();
+        let req = compute_req(&fields, &templates).unwrap();
+        assert_eq!(
+            req,
+            vec![ReqEntry {
+                template_ord: 0,
+                kind: ReqKind::All,
+                field_ords: vec![0],
+            }]
+        );
+    }
+
+    #[test]
+    fn req_cn_dual_templates() {
+        let (fields, templates) = cn_model();
+        let req = compute_req(&fields, &templates).unwrap();
+        assert_eq!(
+            req,
+            vec![
+                ReqEntry {
+                    template_ord: 0,
+                    kind: ReqKind::All,
+                    field_ords: vec![0],
+                },
+                ReqEntry {
+                    template_ord: 1,
+                    kind: ReqKind::All,
+                    field_ords: vec![1],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn req_hint_any() {
+        let (fields, templates) = hint_model();
+        let req = compute_req(&fields, &templates).unwrap();
+        assert_eq!(
+            req,
+            vec![ReqEntry {
+                template_ord: 0,
+                kind: ReqKind::Any,
+                field_ords: vec![0, 1],
+            }]
+        );
     }
 }

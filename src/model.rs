@@ -262,11 +262,20 @@ impl Model {
         self.sort_field_index = idx;
         self
     }
+
+    /// Compute Anki's `req` (required fields per template) for this model.
+    ///
+    /// Errors with [`crate::Error::TemplateReq`] if any template's `qfmt`
+    /// contains no detectable field references.
+    pub fn req(&self) -> crate::Result<Vec<crate::req::ReqEntry>> {
+        crate::req::compute_req(&self.fields, &self.templates)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Error;
 
     #[test]
     fn field_new_defaults() {
@@ -371,5 +380,80 @@ mod tests {
             "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n"
         );
         assert_eq!(DEFAULT_LATEX_POST, "\\end{document}");
+    }
+
+    #[test]
+    fn req_static_only_with_fields_requires_all() {
+        // Python parity: with fields present, a qfmt with no field refs still
+        // yields "all" (blanking any field removes the never-present sentinel).
+        let m = Model::new(1, "x")
+            .field(Field::new("Q"))
+            .template(Template::new("c", "static only", ""));
+        let req = m.req().unwrap();
+        assert_eq!(
+            req,
+            vec![crate::req::ReqEntry {
+                template_ord: 0,
+                kind: crate::req::ReqKind::All,
+                field_ords: vec![0],
+            }]
+        );
+    }
+
+    #[test]
+    fn req_errors_when_model_has_no_fields() {
+        // With zero fields neither strategy loop can run; Python raises its
+        // equivalent Exception here. This is the reachable error path.
+        let m = Model::new(1, "x").template(Template::new("c", "static only", ""));
+        let err = m.req().unwrap_err();
+        match err {
+            Error::TemplateReq { qfmt } => assert!(qfmt.contains("static only")),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn req_cloze_filter_requires_text_only() {
+        let m = Model::new(1, "c")
+            .model_type(ModelType::Cloze)
+            .field(Field::new("Text"))
+            .field(Field::new("Back Extra"))
+            .template(Template::new(
+                "Cloze",
+                "{{cloze:Text}}",
+                "{{cloze:Text}}<br>{{Back Extra}}",
+            ));
+        let req = m.req().unwrap();
+        assert_eq!(
+            req,
+            vec![crate::req::ReqEntry {
+                template_ord: 0,
+                kind: crate::req::ReqKind::All,
+                field_ords: vec![0],
+            }]
+        );
+        // NOTE: Python genanki 0.13.x yields field_ords [0, 1] because chevron does not strip filters.
+    }
+
+    #[test]
+    fn req_type_in_the_answer_front() {
+        // With filter resolution, `type:Back` carries Back's value on the front,
+        // so blanking Front still renders Back's sentinel: no "all" field. Both
+        // fields fall to the "any" strategy (either one provides content).
+        // NOTE: Python genanki 0.13.x yields [[0, "all", [0]]] because chevron
+        // looks up the literal key `type:Back` (missing -> empty).
+        let m = Model::new(1, "t")
+            .field(Field::new("Front"))
+            .field(Field::new("Back"))
+            .template(Template::new("c", "{{Front}}\n\n{{type:Back}}", "x"));
+        let req = m.req().unwrap();
+        assert_eq!(
+            req,
+            vec![crate::req::ReqEntry {
+                template_ord: 0,
+                kind: crate::req::ReqKind::Any,
+                field_ords: vec![0, 1],
+            }]
+        );
     }
 }
