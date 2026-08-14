@@ -1161,4 +1161,346 @@ mod tests {
         assert_eq!(format_tags(&tags), " foo bar ");
         assert_eq!(format_tags(&[]), "  ");
     }
+
+    // --- Phase 6 hardening: hand-rolled property tests (issue #8) ---
+    //
+    // Deterministic PRNG + generators, zero new crates (plan sec. 4.1-4.3).
+    // HTML properties call `find_invalid_html_tags` directly (pure, so no log
+    // output); cloze properties build fields from alphabets without `<`/`>`
+    // so `Note::new` never emits the warn path and cannot race the
+    // log-capture tests above.
+
+    /// Deterministic xorshift64* PRNG for property tests (not cryptographic).
+    struct XorShift64(u64);
+
+    impl XorShift64 {
+        fn new(seed: u64) -> Self {
+            Self(seed | 1) // avoid the all-zero state
+        }
+        fn next_u64(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.0 = x;
+            x
+        }
+        fn next_usize(&mut self, lo: usize, hi_exclusive: usize) -> usize {
+            assert!(hi_exclusive > lo);
+            let span = hi_exclusive - lo;
+            lo + (self.next_u64() as usize % span)
+        }
+        fn next_bool(&mut self) -> bool {
+            self.next_u64() & 1 == 1
+        }
+    }
+
+    /// Iteration counts kept as constants so CI results are reproducible.
+    const HTML_PROP_ITERS: usize = 500;
+    const CLOZE_PROP_ITERS: usize = 200;
+
+    /// Whole known-valid HTML tags for the whitelist oracle (plan sec. 4.2 #4).
+    const HTML_VALID_TAGS: &[&str] = &[
+        "<br>",
+        "<br/>",
+        "<br />",
+        "<h1>",
+        "</h1>",
+        "<h1 style=\"x\">",
+        "<td>",
+        "</Td>",
+        "<div class=\"box\">",
+        "<img src=\"a.png\">",
+        "<!-- comment -->",
+        "<![CDATA[x]]>",
+    ];
+
+    /// Whole known-invalid tags for the blacklist oracle (plan sec. 4.2 #5).
+    const HTML_BAD_TAGS: &[&str] = &["<>", "< >", "<@h1>", "<h1@>"];
+
+    /// Wide text alphabet (may contain `<`/`>`/`{`/`}`) for the mixed mode.
+    const TEXT_ALPHABET: &[char] = &[
+        'a', 'b', 'c', 'd', 'e', 'f', ' ', '\n', '1', '2', '3', '(', ')', '[', ']', '.', ':', '!',
+        '?', 'é', 'ü', '中', '文',
+    ];
+
+    /// Text without `<`/`>`/`{`/`}`: safe for the HTML oracles (cannot merge
+    /// into tags) and the cloze marker oracle (cannot form `{{cN::`).
+    const SAFE_ALPHABET: &[char] = &[
+        'a', 'b', 'c', 'd', 'e', ' ', '\n', '1', '2', '3', '.', ',', '!', '?', 'é', 'ü',
+    ];
+
+    fn gen_text(rng: &mut XorShift64, max_len: usize, alphabet: &[char]) -> String {
+        let len = rng.next_usize(0, max_len + 1);
+        (0..len)
+            .map(|_| alphabet[rng.next_usize(0, alphabet.len())])
+            .collect()
+    }
+
+    enum HtmlMode {
+        /// Safe text + whole valid tags only; expect zero invalid tags.
+        Whitelist,
+        /// Safe text + whole known-invalid tags only; expect exactly those.
+        Blacklist,
+        /// Everything: text, valid/invalid tags, bare `<`/`>`, `{{c` noise.
+        Mixed,
+    }
+
+    fn gen_html_field(rng: &mut XorShift64, mode: HtmlMode, target: usize) -> String {
+        let mut s = String::new();
+        while s.len() < target {
+            let piece: String = match mode {
+                HtmlMode::Whitelist => {
+                    if rng.next_bool() {
+                        HTML_VALID_TAGS[rng.next_usize(0, HTML_VALID_TAGS.len())].to_string()
+                    } else {
+                        gen_text(rng, 12, SAFE_ALPHABET)
+                    }
+                }
+                HtmlMode::Blacklist => {
+                    if rng.next_bool() {
+                        HTML_BAD_TAGS[rng.next_usize(0, HTML_BAD_TAGS.len())].to_string()
+                    } else {
+                        gen_text(rng, 12, SAFE_ALPHABET)
+                    }
+                }
+                HtmlMode::Mixed => match rng.next_usize(0, 7) {
+                    0 => gen_text(rng, 12, TEXT_ALPHABET),
+                    1 => HTML_VALID_TAGS[rng.next_usize(0, HTML_VALID_TAGS.len())].to_string(),
+                    2 => HTML_BAD_TAGS[rng.next_usize(0, HTML_BAD_TAGS.len())].to_string(),
+                    3 => "<".to_string(),
+                    4 => ">".to_string(),
+                    5 => "{{c".to_string(),
+                    _ => "}}".to_string(),
+                },
+            };
+            s.push_str(&piece);
+        }
+        s
+    }
+
+    #[test]
+    fn html_scanner_property_invariants() {
+        let mut rng = XorShift64::new(0x5EED_BA5E_C0FF_EE01);
+        for i in 0..HTML_PROP_ITERS {
+            // Mostly short fields; a few up to ~4k to stress non-anchored scans.
+            let target = if i % 20 == 0 { 4000 } else { 256 };
+            let field = gen_html_field(&mut rng, HtmlMode::Mixed, target);
+            let invalid = find_invalid_html_tags(&field);
+            for t in &invalid {
+                assert!(
+                    t.starts_with('<') && t.ends_with('>'),
+                    "reported tag has wrong shape: {t:?}"
+                );
+                assert!(field.contains(t), "scanner invented {t:?} for {field:?}");
+                // Idempotent classification: re-scanning a reported tag
+                // reproduces exactly itself (tags end at the first `>`).
+                assert_eq!(
+                    find_invalid_html_tags(t),
+                    vec![t.clone()],
+                    "reclassification of {t:?} is not idempotent"
+                );
+            }
+            // Every reported tag must be one of the scanner's own tag matches
+            // (the scanner never invents tags beyond `tag_re`).
+            let found: Vec<String> = tag_re()
+                .find_iter(&field)
+                .map(|m| m.as_str().to_string())
+                .collect();
+            for t in &invalid {
+                assert!(found.contains(t), "reported tag not a tag_re match: {t:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn html_scanner_property_whitelist_oracle() {
+        let mut rng = XorShift64::new(0xBAD0_C0DE_5EED_0001);
+        for i in 0..HTML_PROP_ITERS {
+            let target = if i % 20 == 0 { 4000 } else { 256 };
+            let field = gen_html_field(&mut rng, HtmlMode::Whitelist, target);
+            assert_eq!(
+                find_invalid_html_tags(&field),
+                Vec::<String>::new(),
+                "whitelist-only field reported invalid tags: {field:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn html_scanner_property_blacklist_oracle() {
+        let mut rng = XorShift64::new(0xDEAD_BEEF_CAFE_0002);
+        for _ in 0..HTML_PROP_ITERS {
+            let field = gen_html_field(&mut rng, HtmlMode::Blacklist, 256);
+            // Rebuild the expected list from the pieces: every `<` starts a
+            // whole bad tag (safe text has no `<`/`>`), closed at the next `>`.
+            let mut expected: Vec<String> = Vec::new();
+            let mut rest = field.as_str();
+            while let Some(pos) = rest.find('<') {
+                let (head, tail) = rest.split_at(pos);
+                assert!(
+                    !head.contains('>'),
+                    "safe text cannot contain '>': {field:?}"
+                );
+                let end = tail.find('>').expect("whole bad tag is closed") + 1;
+                expected.push(tail[..end].to_string());
+                rest = &tail[end..];
+            }
+            assert!(!rest.contains('>'), "trailing '>' without '<': {field:?}");
+            assert_eq!(
+                find_invalid_html_tags(&field),
+                expected,
+                "blacklist field mismatch: {field:?}"
+            );
+        }
+    }
+
+    /// Public-path ords for the two-field cloze model (plan sec. 4.3).
+    fn cloze_ords_for(text: &str) -> Vec<i32> {
+        let mut n = Note::new(cloze_model(), [text, ""]).unwrap();
+        n.cards().unwrap().iter().map(|c| c.ord).collect()
+    }
+
+    /// Body text for constructed cloze markers: no `{`/`}`/`<`/`>` so it can
+    /// neither form nested markers nor trigger the HTML warn path; newlines
+    /// exercise the DOTALL ord regex.
+    ///
+    /// Bodies are forced **non-empty**: Python genanki's `.+?}}` ord regex
+    /// requires at least one body char, so an empty body (`{{cN::}}`) makes
+    /// the lazy match swallow following text up to the next `}}` (parity
+    /// behavior pinned by `cloze_empty_body_swallows_following_text`); the
+    /// constructed-marker oracle below therefore stays on well-formed bodies.
+    fn gen_cloze_body(rng: &mut XorShift64) -> String {
+        let s = gen_text(rng, 10, SAFE_ALPHABET);
+        if s.is_empty() { "x".to_string() } else { s }
+    }
+
+    /// Build a field from plain text plus `{{cN::body}}` / `{{cN::body::hint}}`
+    /// markers (`n` in 1..=32). Returns the field and its expected ords
+    /// (sorted unique `n-1`; empty means the field has no markers).
+    fn gen_cloze_field(rng: &mut XorShift64) -> (String, Vec<i32>) {
+        let mut s = String::new();
+        let mut ords: Vec<i32> = Vec::new();
+        let pieces = rng.next_usize(1, 9);
+        for _ in 0..pieces {
+            match rng.next_usize(0, 4) {
+                0 | 3 => s.push_str(&gen_text(rng, 8, SAFE_ALPHABET)),
+                1 => {
+                    let n = rng.next_usize(1, 33) as i64;
+                    let ord = (n - 1) as i32;
+                    let body = gen_cloze_body(rng);
+                    s.push_str(&format!("{{{{c{n}::{body}}}}}"));
+                    if !ords.contains(&ord) {
+                        ords.push(ord);
+                    }
+                }
+                _ => {
+                    let n = rng.next_usize(1, 33) as i64;
+                    let ord = (n - 1) as i32;
+                    let body = gen_cloze_body(rng);
+                    s.push_str(&format!("{{{{c{n}::{body}::{body}}}}}")); // hint form
+                    if !ords.contains(&ord) {
+                        ords.push(ord);
+                    }
+                }
+            }
+        }
+        ords.sort_unstable();
+        (s, ords)
+    }
+
+    #[test]
+    fn cloze_property_constructed_markers() {
+        let mut rng = XorShift64::new(0xC10E_5E20_2400_0001);
+        for _ in 0..CLOZE_PROP_ITERS {
+            let (text, mut expected) = gen_cloze_field(&mut rng);
+            if expected.is_empty() {
+                expected.push(0); // Python default card when no markers
+            }
+            assert_eq!(cloze_ords_for(&text), expected, "field: {text:?}");
+        }
+    }
+
+    #[test]
+    fn cloze_empty_body_swallows_following_text() {
+        // Python parity pin: `.+?}}` needs >= 1 body char, so an empty body
+        // makes the lazy match consume text up to the *next* `}}`, hiding the
+        // second marker. Verified against Python genanki v0.13.x's
+        // `re.finditer(r"\{\{c(\d+)::.+?\}\}", value, re.DOTALL)`.
+        assert_eq!(
+            cloze_ords_for("{{c17::}} text {{c16::x}} and {{c5::y}}"),
+            [4, 16]
+        );
+        // Non-empty bodies are independent of what follows.
+        assert_eq!(
+            cloze_ords_for("{{c17::x}} text {{c16::y}} and {{c5::z}}"),
+            [4, 15, 16]
+        );
+    }
+
+    #[test]
+    fn cloze_property_multi_field_union() {
+        let mut rng = XorShift64::new(0xC10E_5E20_2400_0002);
+        for _ in 0..CLOZE_PROP_ITERS {
+            let (t1, e1) = gen_cloze_field(&mut rng);
+            let (t2, e2) = gen_cloze_field(&mut rng);
+            let mut n = Note::new(multi_field_cloze_model(), [t1.as_str(), t2.as_str()]).unwrap();
+            let ords: Vec<i32> = n.cards().unwrap().iter().map(|c| c.ord).collect();
+            let mut expected = e1;
+            expected.extend(e2);
+            expected.sort_unstable();
+            expected.dedup();
+            if expected.is_empty() {
+                expected.push(0);
+            }
+            assert_eq!(ords, expected, "fields: {t1:?} / {t2:?}");
+        }
+    }
+
+    /// Random junk: wide char alphabet plus occasional `{{c` fragments.
+    fn gen_cloze_junk(rng: &mut XorShift64) -> String {
+        const JUNK: &[char] = &[
+            'a', 'b', 'c', '{', '}', ':', '1', '2', '3', ' ', '\n', 'é', '中', '!', '?', 'x', 'y',
+        ];
+        let len = rng.next_usize(0, 300);
+        let mut s = String::new();
+        for i in 0..len {
+            if i % 7 == 0 && rng.next_bool() {
+                s.push_str("{{c");
+            } else {
+                s.push(JUNK[rng.next_usize(0, JUNK.len())]);
+            }
+        }
+        s
+    }
+
+    #[test]
+    fn cloze_property_random_junk_sorted_unique_no_panic() {
+        let mut rng = XorShift64::new(0xC10E_5E20_2400_0003);
+        for _ in 0..CLOZE_PROP_ITERS {
+            let text = gen_cloze_junk(&mut rng);
+            let ords = cloze_ords_for(&text);
+            let mut sorted = ords.clone();
+            sorted.sort_unstable();
+            sorted.dedup();
+            assert_eq!(ords, sorted, "ords must be sorted+deduped: {ords:?}");
+            assert!(ords.iter().all(|&o| o >= 0));
+            assert!(!ords.is_empty(), "cloze cards always have a default card");
+        }
+    }
+
+    #[test]
+    fn cloze_ord_re_matches_only_digit_groups() {
+        let mut rng = XorShift64::new(0xC10E_5E20_2400_0004);
+        for _ in 0..CLOZE_PROP_ITERS {
+            let text = gen_cloze_junk(&mut rng);
+            for caps in cloze_ord_re().captures_iter(&text) {
+                let digits = &caps[1];
+                assert!(
+                    digits.bytes().all(|b| b.is_ascii_digit()),
+                    "ord group must be digits: {digits:?}"
+                );
+            }
+        }
+    }
 }

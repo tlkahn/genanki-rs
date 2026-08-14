@@ -10,28 +10,32 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  test:
-    name: fmt + clippy + test
+  # rustfmt is platform-stable, so run it once on Linux instead of twice.
+  fmt:
+    name: fmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: cargo fmt
-        run: cargo fmt --all -- --check
-
-      - name: cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: cargo test
-        run: cargo test --all-targets --all-features
-
-      - name: cargo test --doc
-        run: cargo test --doc --all-features
+  test:
+    name: clippy + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all-targets --all-features
+      - run: cargo test --doc --all-features
