@@ -76,6 +76,23 @@ impl Note {
     /// Consume and set the note's tags (validated).
     ///
     /// Errors with [`Error::TagContainsSpace`] if any tag contains U+0020.
+    ///
+    /// # Notes
+    ///
+    /// On validation failure this method **consumes** `self` (standard
+    /// fallible builder style): the note is dropped and the error returned.
+    /// Prefer [`Self::set_tags`] (or [`Self::add_tag`]) when you must keep
+    /// the note across a failed call:
+    ///
+    /// ```
+    /// # use genanki::{Field, Model, Note, Template};
+    /// # let model = Model::new(1, "m")
+    /// #     .field(Field::new("Q")).field(Field::new("A"))
+    /// #     .template(Template::new("c", "{{Q}}", "{{A}}"));
+    /// let mut note = Note::new(model, ["Q", "A"]).unwrap();
+    /// assert!(note.set_tags(["bad tag"]).is_err());
+    /// assert_eq!(note.fields(), ["Q", "A"]); // note retained
+    /// ```
     pub fn with_tags(self, tags: impl IntoIterator<Item = impl Into<String>>) -> Result<Self> {
         let tags = collect_and_validate_tags(tags)?;
         Ok(Self { tags, ..self })
